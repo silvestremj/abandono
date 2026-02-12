@@ -1,0 +1,12 @@
+# Datos y modelos (Privacidad)
+data/
+output/
+*.csv
+*.xlsx
+*.pkl
+
+# Python y VS Code
+__pycache__/
+.vscode/
+.ipynb_checkpoints/
+.DS_Store
