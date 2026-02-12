@@ -2,4 +2,6 @@ Título del TFM.
 
 Objetivo: Predecir el riesgo de abandono escolar.
 
-Instrucciones: Cómo ejecutar el código (ej: "Ejecutar 01_integracion.ipynb para generar la tabla maestra").
+Instrucciones: 
+Guardar en un directorio "data" los ficheros de origen en la raíz del proyecto.
+Ejecutar el Notebook "01_seguimiento_completo.ipynb".
