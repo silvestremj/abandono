@@ -1,3 +1,7 @@
+# Bases de datos
+*.db
+*.sqlite
+
 # Datos y modelos (Privacidad)
 data/
 output/
@@ -10,3 +14,4 @@ __pycache__/
 .vscode/
 .ipynb_checkpoints/
 .DS_Store
+*.pyc
