@@ -5,7 +5,9 @@ from datetime import datetime
 class Visualizador:
     """Módulo 5: Presentación de resultados."""
 
-    def __init__(self, output_dir="../output"):
+    def __init__(
+        self, output_dir=os.path.join(os.path.dirname(__file__), "..", "output")
+    ):
         self.output_dir = output_dir
         # Aseguramos que exista la carpeta output
         os.makedirs(self.output_dir, exist_ok=True)
