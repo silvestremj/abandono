@@ -4,4 +4,4 @@ Objetivo: Predecir el riesgo de abandono escolar.
 
 Instrucciones: 
 Guardar en un directorio "data" los ficheros de origen en la raíz del proyecto.
-Ejecutar el Notebook "01_seguimiento_completo.ipynb".
+Ejecutar main.py.
