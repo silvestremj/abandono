@@ -15,3 +15,7 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 *.pyc
+
+# Registros de ejecución y diagnóstico
+logs/
+*.log
