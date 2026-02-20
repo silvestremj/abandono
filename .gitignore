@@ -19,3 +19,6 @@ __pycache__/
 # Registros de ejecución y diagnóstico
 logs/
 *.log
+
+# Documentación generada por MkDocs
+site/
