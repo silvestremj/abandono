@@ -1,5 +1,8 @@
 import os
 from datetime import datetime
+from typing import Any, Dict, Optional
+
+import pandas as pd
 
 
 class Visualizador:
@@ -7,12 +10,14 @@ class Visualizador:
 
     def __init__(
         self, output_dir=os.path.join(os.path.dirname(__file__), "..", "output")
-    ):
+    ) -> None:
         self.output_dir = output_dir
         # Aseguramos que exista la carpeta output
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def mostrar_en_consola(self, df, stats):
+    def mostrar_en_consola(
+        self, df: Optional[pd.DataFrame], stats: Dict[str, Any]
+    ) -> None:
         print("\n" + "=" * 40)
         print("   REPORTE DE SEGUIMIENTO ACADÉMICO")
         print("=" * 40)
@@ -29,11 +34,11 @@ class Visualizador:
             print(df[cols_finales].head(10))
         print("=" * 40 + "\n")
 
-    def exportar_csv(self, df):
+    def exportar_csv(self, df: pd.DataFrame) -> None:
         # Guardamos el fichero físico en la carpeta output
-        fecha = datetime.now().strftime("%Y%m%d_%H%M")
-        nombre_fichero = f"resultado_riesgos_{fecha}.csv"
-        ruta_completa = os.path.join(self.output_dir, nombre_fichero)
+        fecha: str = datetime.now().strftime("%Y%m%d_%H%M")
+        nombre_fichero: str = f"resultado_riesgos_{fecha}.csv"
+        ruta_completa: str = os.path.join(self.output_dir, nombre_fichero)
 
         df.to_csv(ruta_completa, index=False, sep=";", encoding="latin1")
         print(f"[Output] Archivo generado: {ruta_completa}")

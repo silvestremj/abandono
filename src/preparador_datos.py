@@ -1,3 +1,5 @@
+from typing import Any, Dict
+
 import numpy as np
 import pandas as pd
 
@@ -5,13 +7,13 @@ import pandas as pd
 class PreparadorDatos:
     """Módulo 2: Integración y Limpieza."""
 
-    def __init__(self, datasets_dict):
-        self.datasets = datasets_dict
+    def __init__(self, datasets_dict: Dict[str, pd.DataFrame]) -> None:
+        self.datasets: Dict[str, pd.DataFrame] = datasets_dict
 
-    def _normalizar(self, df, col):
+    def _normalizar(self, df: pd.DataFrame, col: str) -> pd.Series:
         return df[col].astype(str).str.strip().str.upper()
 
-    def ejecutar_preparacion(self):
+    def ejecutar_preparacion(self) -> pd.DataFrame:
         # 1. Base y Target (del archivo Excel)
         df_base = self.datasets["actual"].copy()
 
@@ -21,14 +23,14 @@ class PreparadorDatos:
         df_base["n_siu"] = self._normalizar(df_base, "n_siu")
         df_base["estudio"] = self._normalizar(df_base, "estudio")
 
-        def mapear_riesgo(estado):
+        def mapear_riesgo(estado: Any) -> float:
             estado = str(estado).upper()
             if "RECIBIDO" in estado:
-                return 0
+                return 0.0
             if "CURSO" in estado or "PAUSA" in estado:
-                return 1
+                return 1.0
             if "ABANDONO" in estado or "LIBRE" in estado or "BAJA" in estado:
-                return 2
+                return 2.0
             return np.nan
 
         df_base["target"] = df_base["estado_actual"].apply(mapear_riesgo)

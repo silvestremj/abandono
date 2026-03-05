@@ -14,7 +14,7 @@ from src.preparador_datos import PreparadorDatos
 from src.visualizador import Visualizador
 
 
-def main():
+def main() -> None:
     # 0. Inicialización de infraestructura
     db = GestorBaseDatos()
     db.inicializar_tablas_fijas()

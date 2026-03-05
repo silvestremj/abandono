@@ -1,7 +1,12 @@
+from typing import Any, Dict
+
+import pandas as pd
+
+
 class Analizador:
     """Módulo 3: Análisis descriptivo y temporal."""
 
-    def calcular_estadisticas_basicas(self, df):
+    def calcular_estadisticas_basicas(self, df: pd.DataFrame) -> Dict[str, Any]:
         # Validación defensiva
         if df is None or df.empty:
             return {"error": "El DataFrame está vacío"}
@@ -9,7 +14,7 @@ class Analizador:
         # Cálculo simple (Bala Trazadora)
         try:
             # Asumiendo que existen columnas que empiezan por 'nota_'
-            cols_notas = [c for c in df.columns if "nota_" in c]
+            cols_notas = [c for c in df.columns if isinstance(c, str) and "nota_" in c]
             if not cols_notas:
                 return {"warning": "No hay columnas de notas para analizar"}
 
