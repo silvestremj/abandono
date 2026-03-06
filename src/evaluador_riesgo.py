@@ -25,8 +25,12 @@ class EvaluadorRiesgo:
         if any(p in estado_str for p in self.reglas.get("palabras_bajo_riesgo", [])):
             return "BAJO"
 
-        # 3. Si encaja en Medio (En curso, En pausa, etc.) o no encaja en ninguno, asigna MEDIO
-        return "MEDIO"
+        # 3. Chequea si el riesgo es MEDIO (En curso, En pausa, etc.)
+        if any(p in estado_str for p in self.reglas.get("palabras_medio_riesgo", [])):
+            return "MEDIO"
+
+        # 4. Si es "SIN REGISTRO" u otro estado desconocido
+        return "NO CALCULABLE"
 
     def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:
         if df is None or "estado_actual" not in df.columns:
