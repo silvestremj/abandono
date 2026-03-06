@@ -1,15 +1,29 @@
 import os
 import sqlite3
-from typing import Dict
+from typing import Dict, Optional
 
 import pandas as pd
+
+# Importa la configuración global
+from src.config import config
 
 
 class GestorBaseDatos:
     """Gestor de persistencia en SQLite con estrategia de reemplazo dinámico."""
 
-    def __init__(self, db_name: str = "estudiantes.db") -> None:
-        self.db_path: str = os.path.join(os.path.dirname(__file__), "..", db_name)
+    def __init__(self, db_name: Optional[str] = None) -> None:
+        if db_name is None:
+            db_name = config.paths.get("db_name", "estudiantes.db")
+
+        # Resuelve el nombre asegurando a Pylance que siempre será un string
+        nombre_db: str = (
+            db_name
+            if db_name is not None
+            else str(config.paths.get("db_name", "estudiantes.db"))
+        )
+        # Calcula la ruta absoluta a la raíz del proyecto
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        self.db_path: str = os.path.join(base_dir, nombre_db)
 
     def inicializar_tablas_fijas(self) -> None:
         """Crea la tabla de logs necesaria para el arranque."""

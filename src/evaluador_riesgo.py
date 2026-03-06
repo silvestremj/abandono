@@ -1,18 +1,31 @@
+from typing import Any, Dict
+
 import pandas as pd
+
+# Importa la configuración global
+from src.config import config
 
 
 class EvaluadorRiesgo:
     """Módulo 4: Cálculo de riesgo (Reglas de negocio)."""
 
+    def __init__(self) -> None:
+        # Carga las reglas del YAML al instanciar la clase
+        self.reglas: Dict[str, Any] = config.reglas_riesgo
+
     def asignar_riesgo(self, estado: str) -> str:
-        # Lógica Hardcoded inicial [cite: 4]
-        estado = str(estado).upper()
-        if "ABANDONO" in estado:
+        # Lógica Hardcoded inicial
+        estado_str = str(estado).upper()
+
+        # 1. Chequea si el riesgo es ALTO (Abandono, Baja, etc.)
+        if any(p in estado_str for p in self.reglas.get("palabras_alto_riesgo", [])):
             return "ALTO"
-        if "RECIBIDO" in estado:
+
+        # 2. Chequea si el riesgo es BAJO (Recibido, etc.)
+        if any(p in estado_str for p in self.reglas.get("palabras_bajo_riesgo", [])):
             return "BAJO"
-        # 'En curso' o 'En pausa' -> Riesgo MEDIO
-        # (Posteriormente refinaremos 'En pausa' como riesgo mayor)
+
+        # 3. Si encaja en Medio (En curso, En pausa, etc.) o no encaja en ninguno, asigna MEDIO
         return "MEDIO"
 
     def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:

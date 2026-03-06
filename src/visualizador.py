@@ -4,15 +4,22 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
+# Importa la configuración global
+from src.config import config
+
 
 class Visualizador:
     """Módulo 5: Presentación de resultados."""
 
-    def __init__(
-        self, output_dir=os.path.join(os.path.dirname(__file__), "..", "output")
-    ) -> None:
-        self.output_dir = output_dir
-        # Aseguramos que exista la carpeta output
+    def __init__(self, output_dir: Optional[str] = None) -> None:
+        if output_dir is None:
+            nombre_carpeta: str = config.paths.get("output_dir", "output")
+            base_dir: str = os.path.dirname(os.path.dirname(__file__))
+            self.output_dir: str = os.path.join(base_dir, nombre_carpeta)
+        else:
+            self.output_dir = output_dir
+
+        # Asegura que exista la carpeta output
         os.makedirs(self.output_dir, exist_ok=True)
 
     def mostrar_en_consola(

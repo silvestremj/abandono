@@ -3,6 +3,9 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
+# Importa la configuración global
+from src.config import config
+
 
 class PreparadorDatos:
     """Módulo 2: Integración y Limpieza."""
@@ -23,14 +26,19 @@ class PreparadorDatos:
         df_base["n_siu"] = self._normalizar(df_base, "n_siu")
         df_base["estudio"] = self._normalizar(df_base, "estudio")
 
+        # Extraer las reglas del YAML una sola vez
+        reglas = config.reglas_riesgo
+
         def mapear_riesgo(estado: Any) -> float:
             estado = str(estado).upper()
-            if "RECIBIDO" in estado:
+
+            if any(p in estado for p in reglas.get("palabras_bajo_riesgo", [])):
                 return 0.0
-            if "CURSO" in estado or "PAUSA" in estado:
+            if any(p in estado for p in reglas.get("palabras_medio_riesgo", [])):
                 return 1.0
-            if "ABANDONO" in estado or "LIBRE" in estado or "BAJA" in estado:
+            if any(p in estado for p in reglas.get("palabras_alto_riesgo", [])):
                 return 2.0
+
             return np.nan
 
         df_base["target"] = df_base["estado_actual"].apply(mapear_riesgo)

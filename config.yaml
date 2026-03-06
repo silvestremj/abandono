@@ -1,0 +1,27 @@
+# Rutas relativas del proyecto
+paths:
+  data_dir: "data"
+  output_dir: "output"
+  db_name: "estudiantes.db"
+
+# Configuración de archivos de entrada
+datasets:
+  inscripciones:
+    nombre: "LSE_Inscrip_Baja_Recibido.csv"
+    tipo: "csv"
+    sep: ";"
+    encoding: "latin1"
+  notas_bimestre:
+    nombre: "LSE_Notas_Estadistica_Bimestre.csv"
+    tipo: "csv"
+    sep: ";"
+    encoding: "latin1"
+  actual:
+    nombre: "LSE_Notas_Inscrip_Baja_Actual.xlsx"
+    tipo: "excel"
+
+# Reglas de negocio para el cálculo de riesgo y target
+reglas_riesgo:
+  palabras_bajo_riesgo: ["RECIBIDO"]
+  palabras_medio_riesgo: ["CURSO", "PAUSA"]
+  palabras_alto_riesgo: ["ABANDONO", "LIBRE", "BAJA"]
