@@ -9,8 +9,9 @@ output/
 *.xlsx
 *.pkl
 
-# Python y VS Code
+# Python, Pytest y VS Code
 __pycache__/
+.pytest_cache/
 .vscode/
 .ipynb_checkpoints/
 .DS_Store
