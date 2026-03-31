@@ -1,11 +1,14 @@
 import os
 import sys
 
+from src.entrenador_modelos import EntrenadorModelos
+
 # Aseguramos que Python encuentre los módulos dentro de 'src'
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 # Imports con los nombres de archivos y clases
 from src.analizador_datos import Analizador
+from src.config import config
 from src.evaluador_riesgo import EvaluadorRiesgo
 from src.gestor_base_datos import GestorBaseDatos
 from src.gestor_logs import GestorLogs
@@ -21,7 +24,7 @@ def main() -> None:
 
     # Activamos logs híbridos pasando el gestor de DB
     log = GestorLogs(gestor_db=db)
-    log.registrar("MAIN", "Iniciando Pipeline de la Espiral 1")
+    log.registrar("MAIN", "Iniciando Pipeline de la Espiral 3 (Machine Learning)")
 
     try:
         # 1. Ingesta
@@ -41,19 +44,46 @@ def main() -> None:
         stats = analista.calcular_estadisticas_basicas(df_master)
         log.registrar("INF_3", f"Media calculada: {stats.get('media_aritmetica')}")
 
-        # 4. Cálculo de Riesgo
+        # 4. Preparación de datos
+        df_ml = preparador.preparar_dataset_ml(df_master)
+        log.registrar("INF_4", "Dataset para ML preparado")
+
+        # 5. Machine learning
+        forzar_entrenamiento = config.machine_learning.get(
+            "forzar_entrenamiento", False
+        )
+
+        # Verificamos si los archivos del modelo ya existen
+        ruta_modelo = os.path.join(
+            os.path.dirname(__file__), "modelos", "arbol_decision.pkl"
+        )
+
+        if forzar_entrenamiento or not os.path.exists(ruta_modelo):
+            log.registrar("INF_ML", "Iniciando fase de entrenamiento...")
+            entrenador = EntrenadorModelos()
+            entrenador.entrenar_y_guardar(df_ml)
+            log.registrar("INF_ML", "Modelo entrenado y guardado.")
+        else:
+            log.registrar(
+                "INF_ML",
+                "Saltando entrenamiento. Se usará el modelo existente en disco.",
+            )
+
+        # 6. Cálculo de Riesgo (Inferencia mediante modelo guardado)
         evaluador = EvaluadorRiesgo()
         df_final = evaluador.ejecutar_evaluacion(df_master)
-        log.registrar("INF_4", "Cálculo de riesgo finalizado")
+        log.registrar("INF_4", "Cálculo de riesgo mediante ML finalizado")
 
-        # 5. Presentación
-        vista = Visualizador(output_dir="output")
+        # 7. Presentación
+        vista = Visualizador()
         vista.mostrar_en_consola(df_final, stats)
         vista.exportar_csv(df_final)
-        log.registrar("INF_5", "Resultados exportados a /output")
+        log.registrar("INF_5", "Resultados presentados y exportados")
 
     except Exception as e:
-        log.registrar("ERROR", f"Fallo en la ejecución: {str(e)}", estado="ERROR")
+        log.registrar(
+            "MAIN", f"Error crítico en la ejecución: {str(e)}", estado="ERROR"
+        )
         sys.exit(1)
 
 

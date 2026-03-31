@@ -39,6 +39,10 @@ class ConfigLoader:
     def reglas_riesgo(self) -> Dict[str, Any]:
         return self.config_data.get("reglas_riesgo", {})
 
+    @property
+    def machine_learning(self) -> Dict[str, Any]:
+        return self.config_data.get("machine_learning", {})
+
 
 # Instancia global para que los demás módulos la importen directamente
 config = ConfigLoader()

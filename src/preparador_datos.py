@@ -116,8 +116,41 @@ class PreparadorDatos:
         tabla_maestra[cols_bimestres] = tabla_maestra[cols_bimestres].fillna(0.0)
         # --------------------------------------------------------------
 
+        # PREPROCESAMIENTO - Tratamiento de variables geográficas (Criterio Escalada)
+        # ---------------------------------------------------------------
+        if "pais" in tabla_maestra.columns:
+            tabla_maestra["pais"] = tabla_maestra["pais"].apply(
+                lambda x: "ARGENTINA" if "ARGENTINA" in str(x).upper() else "OTRO PAIS"
+            )
+
+        if "provincia" in tabla_maestra.columns:
+            # Reemplazar nulos matemáticos y cadenas vacías/falsas
+            tabla_maestra["provincia"] = tabla_maestra["provincia"].fillna(
+                "DESCONOCIDA"
+            )
+            tabla_maestra["provincia"] = tabla_maestra["provincia"].replace(
+                ["", "NAN", "NONE", "NaN", "nan"], "DESCONOCIDA"
+            )
+            # Convertimos a mayúsculas para que detecte "Otro", "OTRO", "otro", etc.
+            tabla_maestra["provincia"] = tabla_maestra["provincia"].apply(
+                lambda x: "DESCONOCIDA" if "OTRO" in str(x).upper() else x
+            )
+
+        # ---------------------------------------------------------------
         # PREPROCESAMIENTO - Tarea 4: Estandarización de Tipos (Type Casting)
         # ---------------------------------------------------------------
+
+        # Arreglar columnas numéricas que traen coma en lugar de punto
+        cols_con_comas = ["nota", "sd_nota", "asist", "sd_asist"]
+        for col in cols_con_comas:
+            if col in tabla_maestra.columns:
+                tabla_maestra[col] = (
+                    tabla_maestra[col].astype(str).str.replace(",", ".")
+                )
+                tabla_maestra[col] = pd.to_numeric(
+                    tabla_maestra[col], errors="coerce"
+                ).fillna(0.0)
+
         # Aseguramos que las columnas de bimestres sean numéricas (float).
         for col in cols_bimestres:
             # errors='coerce' fuerza la conversión y, si hay algún texto raro (ej. "N/A"), lo pasa a NaN, que luego rellenamos con 0.0.
@@ -130,7 +163,97 @@ class PreparadorDatos:
             tabla_maestra["target"] = tabla_maestra["target"].astype(float)
         # ---------------------------------------------------------------
 
+        # Mapeo de los códigos numéricos de ocupación a sus nombres descriptivos.
+        mapping_ocupacion = {
+            0: "No",
+            1: "Estudiante/Becario",
+            2: "Desarrollador/Programador",
+            3: "Docente/Profesor",
+            4: "Ingeniero",
+            5: "Analista",
+            6: "Trabajador a cuenta propia / Emprendedor",
+            7: "Gestor/Director/Jefe",
+            8: "Otros",
+        }
+
+        if "tipo_ocupacion" in tabla_maestra.columns:
+            # Convertimos a entero primero por si acaso viene como float/string
+            tabla_maestra["tipo_ocupacion"] = (
+                pd.to_numeric(tabla_maestra["tipo_ocupacion"], errors="coerce")
+                .fillna(-1)
+                .astype(int)
+            )
+            # Aplicamos el cambio de nombre
+            tabla_maestra["tipo_ocupacion"] = (
+                tabla_maestra["tipo_ocupacion"]
+                .map(mapping_ocupacion)
+                .fillna("Otra/Desconocida")  # Para códigos fuera del rango esperado
+            )
+
         print(
             f"Tabla Maestra generada con {len(tabla_maestra)} registros y nulos tratados."
         )
         return tabla_maestra
+
+    def preparar_dataset_ml(self, df_maestro: pd.DataFrame) -> pd.DataFrame:
+        """
+        Genera un DataFrame numérico apto para entrenar o predecir con scikit-learn.
+        Aplica One-Hot Encoding y define el target binario.
+        """
+        df_ml = df_maestro.copy()
+        reglas = config.reglas_riesgo
+
+        # 1. Creación del Target (1 = Abandono, 0 = Recibido, NaN = En curso/pausa)
+        def asignar_target(estado: str) -> float:
+            estado_str = str(estado).upper()
+            if any(p in estado_str for p in reglas.get("palabras_alto_riesgo", [])):
+                return 1.0
+            elif any(p in estado_str for p in reglas.get("palabras_bajo_riesgo", [])):
+                return 0.0
+            else:
+                return np.nan
+
+        if "estado_actual" in df_ml.columns:
+            df_ml["target_ml"] = df_ml["estado_actual"].apply(asignar_target)
+
+        # 2. Eliminación de variables no predictivas o que generan "Data Leakage"
+        cols_excluir = [
+            "n_siu",
+            "fecha",
+            "fecha_nacimiento",
+            "estado_actual",
+            "año_estado",
+            "comentario",
+            "target",
+            "fecha_baja",
+            "estado_baja",
+            "causa_baja",
+            "comentario_baja",  # Fuga de datos
+            "fecha_estado",  # Fuga de datos
+            "cohorte",
+            "year",
+            "tf_nota",
+            "tf_asist",
+            "tf_recibido",
+            "cant",  # No accionables
+            "unnamed: 28",
+            "unnamed: 29",
+            "unnamed: 30",
+            "unnamed: 31",  # Basura del excel
+            "ocupacion",  # No es predictiva y tiene muchos valores únicos (alta cardinalidad)
+            "ciudad",  # Alta cardinalidad
+        ]
+        cols_excluir_existentes = [c for c in cols_excluir if c in df_ml.columns]
+        df_ml.drop(columns=cols_excluir_existentes, inplace=True, errors="ignore")
+
+        # 3. Identificación de variables categóricas para One-Hot Encoding
+        # Seleccionamos las columnas de tipo 'object' (strings) que quedan
+        cols_categoricas = df_ml.select_dtypes(include=["object"]).columns.tolist()
+
+        # 4. Aplicación de One-Hot Encoding
+        # drop_first=True evita la multicolinealidad perfecta (dummy variable trap)
+        df_ml = pd.get_dummies(
+            df_ml, columns=cols_categoricas, dummy_na=False, drop_first=True
+        )
+
+        return df_ml

@@ -25,3 +25,7 @@ reglas_riesgo:
   palabras_bajo_riesgo: ["RECIBIDO"]
   palabras_medio_riesgo: ["CURSO", "PAUSA"]
   palabras_alto_riesgo: ["ABANDONO", "LIBRE", "BAJA"]
+
+# Configuración del modelo de machine learning
+machine_learning:
+  forzar_entrenamiento: true
