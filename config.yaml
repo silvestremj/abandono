@@ -29,3 +29,4 @@ reglas_riesgo:
 # Configuración del modelo de machine learning
 machine_learning:
   forzar_entrenamiento: true
+  max_bimestre: 6

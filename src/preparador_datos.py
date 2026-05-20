@@ -257,3 +257,38 @@ class PreparadorDatos:
         )
 
         return df_ml
+
+    def filtrar_columnas_por_bimestre(
+        self, df: pd.DataFrame, bimestre_corte: int
+    ) -> pd.DataFrame:
+        """
+        Elimina dinámicamente del DataFrame las columnas de notas y asistencias
+        que pertenecen a bimestres posteriores al hito temporal de corte.
+
+        Args:
+            df (pd.DataFrame): Dataset original con todas las variables temporales.
+            bimestre_corte (int): Hito temporal actual (de 1 a 6).
+
+        Returns:
+            pd.DataFrame: Un nuevo DataFrame sin los bimestres futuros.
+        """
+        # Hacer una copia explícita para evitar mutar el DataFrame original
+        df_filtrado = df.copy()
+
+        columnas_a_eliminar = []
+
+        # Identificar columnas temporales de bimestres futuros (del corte + 1 hasta el 6)
+        for b in range(bimestre_corte + 1, 7):
+            col_nota = f"nota_b{b}"
+            col_asist = f"asist_b{b}"
+
+            if col_nota in df_filtrado.columns:
+                columnas_a_eliminar.append(col_nota)
+            if col_asist in df_filtrado.columns:
+                columnas_a_eliminar.append(col_asist)
+
+        # Eliminar las columnas acumuladas de una sola vez si existen
+        if columnas_a_eliminar:
+            df_filtrado = df_filtrado.drop(columns=columnas_a_eliminar)
+
+        return df_filtrado

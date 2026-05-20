@@ -10,7 +10,7 @@ from src.config import config
 
 
 class EvaluadorRiesgo:
-    """Módulo 4: Cálculo de riesgo mediante ML (Caja Blanca) y Explicabilidad."""
+    """Módulo 4: Cálculo de riesgo mediante ML por Puntos de Control y Explicabilidad."""
 
     def __init__(self, model_dir: Optional[str] = None) -> None:
         # Carga las reglas del YAML al instanciar la clase
@@ -23,47 +23,60 @@ class EvaluadorRiesgo:
         else:
             self.model_dir = model_dir
 
-        self.ruta_modelo = os.path.join(self.model_dir, "arbol_decision.pkl")
-        self.ruta_columnas = os.path.join(self.model_dir, "columnas_entrenamiento.pkl")
+        # Los diccionarios almacenarán en caché los modelos a medida que se necesiten
+        self.modelos_cache: Dict[int, Any] = {}
+        self.columnas_cache: Dict[int, list] = {}
 
-        self.modelo = None
-        self.columnas_entrenamiento = None
+    def _obtener_modelo_bimestre(self, bimestre: int) -> tuple:
+        """Carga bajo demanda (Lazy Loading) el modelo y las columnas de un bimestre específico."""
+        if bimestre not in self.modelos_cache:
+            ruta_modelo = os.path.join(self.model_dir, f"arbol_b{bimestre}.pkl")
+            ruta_columnas = os.path.join(self.model_dir, f"columnas_b{bimestre}.pkl")
 
-        # Carga silenciosa del modelo si ya ha sido entrenado
-        if os.path.exists(self.ruta_modelo) and os.path.exists(self.ruta_columnas):
-            self.modelo = joblib.load(self.ruta_modelo)
-            self.columnas_entrenamiento = joblib.load(self.ruta_columnas)
+            if os.path.exists(ruta_modelo) and os.path.exists(ruta_columnas):
+                self.modelos_cache[bimestre] = joblib.load(ruta_modelo)
+                self.columnas_cache[bimestre] = joblib.load(ruta_columnas)
+            else:
+                return None, None
+
+        return self.modelos_cache[bimestre], self.columnas_cache[bimestre]
+
+    def _detectar_bimestre_alumno(self, fila_alumno: pd.Series) -> int:
+        """Determina el hito temporal actual del alumno basándose en sus notas registradas."""
+        # Buscamos de atrás hacia adelante (del bimestre 6 al 1) cuál es el primero con datos válidos
+        for b in range(6, 0, -1):
+            col_nota = f"nota_b{b}"
+            if col_nota in fila_alumno.index:
+                valor_nota = fila_alumno[col_nota]
+                # Si la nota no es nula, ni vacía, ni cero puro sin asistencia, asumimos que está en este hito
+                if pd.notna(valor_nota) and valor_nota > 0:
+                    return b
+        return 1  # Por defecto, si no hay notas registradas aún, se evalúa con el modelo del Bimestre 1
 
     def _alinear_columnas(
         self, df_ml: pd.DataFrame, columnas_entrenamiento: list
     ) -> pd.DataFrame:
         """Asegura que el dataset de inferencia tenga la misma estructura que el de entrenamiento."""
-
-        # 1. Identificamos qué columnas faltan en una sola pasada
         columnas_faltantes = [
             col for col in columnas_entrenamiento if col not in df_ml.columns
         ]
 
-        # 2. Si faltan columnas, creamos un bloque de ceros y lo concatenamos de golpe
         if columnas_faltantes:
             df_faltantes = pd.DataFrame(
                 0, index=df_ml.index, columns=columnas_faltantes
             )
             df_ml = pd.concat([df_ml, df_faltantes], axis=1)
 
-        # 3. Devolvemos el DataFrame filtrado y ordenado
         return df_ml[columnas_entrenamiento]
 
     def _extraer_justificacion(
         self, df_muestra: pd.DataFrame, modelo: Any, columnas_entrenamiento: list
     ) -> str:
         """Genera la regla en texto plano recorriendo el camino del árbol de decisión."""
-        # Le pasamos el DataFrame completo con sus nombres de columna
         nodo_indicador = modelo.decision_path(df_muestra)
         nodos_ids = nodo_indicador.indices
 
         reglas = []
-        # Extraemos los valores puros solo para la comprobación interna rápida
         valores = df_muestra.values
 
         for nodo_id in nodos_ids:
@@ -86,12 +99,6 @@ class EvaluadorRiesgo:
         return " AND ".join(reglas)
 
     def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:
-        if self.modelo is None or self.columnas_entrenamiento is None:
-            print(
-                "Advertencia: El modelo ML no está entrenado. Ejecuta el entrenamiento primero."
-            )
-            return df
-
         df_riesgo = df.copy()
 
         # 1. Filtramos alumnos activos (los únicos que necesitan predicción)
@@ -106,59 +113,74 @@ class EvaluadorRiesgo:
         df_riesgo["nivel_riesgo"] = "HISTORICO/NO_CALCULABLE"
         df_riesgo["justificacion_riesgo"] = "N/A"
 
-        # 2. Si hay alumnos activos, preparamos sus datos para la inferencia
         df_evaluar = df_riesgo[mask_evaluables].copy()
 
-        if not df_evaluar.empty:
-            # Reproducimos el preprocesamiento de ML (Eliminación de IDs y One-Hot Encoding)
-            cols_excluir = [
-                "n_siu",
-                "fecha",
-                "fecha_nacimiento",
-                "estado_actual",
-                "año_estado",
-                "comentario",
-                "target",
-                "target_ml",
-                "nota",
-                "asist",
-            ]
-            df_ml = df_evaluar.drop(
-                columns=[c for c in cols_excluir if c in df_evaluar.columns],
-                errors="ignore",
-            )
+        if df_evaluar.empty:
+            return df_riesgo
 
-            cols_categoricas = df_ml.select_dtypes(include=["object"]).columns.tolist()
-            df_ml = pd.get_dummies(
-                df_ml, columns=cols_categoricas, dummy_na=False, drop_first=True
-            )
+        # 2. Preprocesamiento base (Eliminación de IDs y codificación de categorías)
+        cols_excluir = [
+            "n_siu",
+            "fecha",
+            "fecha_nacimiento",
+            "estado_actual",
+            "año_estado",
+            "comentario",
+            "target",
+            "target_ml",
+            "nota",
+            "asist",
+        ]
 
-            # Pasamos los datos por el molde
-            X_inferencia = self._alinear_columnas(df_ml, self.columnas_entrenamiento)
+        df_ml_base = df_evaluar.drop(
+            columns=[c for c in cols_excluir if c in df_evaluar.columns],
+            errors="ignore",
+        )
 
-            # 3. Calculamos la probabilidad matemática (Clase 1 = Abandono)
-            probabilidades = self.modelo.predict_proba(X_inferencia)[:, 1]
+        cols_categoricas = df_ml_base.select_dtypes(include=["object"]).columns.tolist()
+        df_ml_base = pd.get_dummies(
+            df_ml_base, columns=cols_categoricas, dummy_na=False, drop_first=True
+        )
 
-            for i, idx in enumerate(df_evaluar.index):
-                prob = probabilidades[i]
-                df_riesgo.loc[idx, "probabilidad_abandono"] = prob
+        # 3. Inferencia individualizada por hito temporal
+        for idx in df_evaluar.index:
+            fila_original = df_evaluar.loc[idx]
 
-                # Traducción de la probabilidad a lógicas de negocio (Umbrales)
-                if prob >= 0.70:
-                    nivel = "ALTO"
-                elif prob >= 0.40:
-                    nivel = "MEDIO"
-                else:
-                    nivel = "BAJO"
+            # Detectar en qué hito temporal (bimestre) se encuentra este alumno concreto
+            b_alumno = self._detectar_bimestre_alumno(fila_original)
 
-                df_riesgo.loc[idx, "nivel_riesgo"] = nivel
+            # Recuperar el modelo adaptado a su realidad temporal
+            modelo_b, columnas_b = self._obtener_modelo_bimestre(b_alumno)
 
-                # 4. Explicabilidad: Extraemos las reglas si el riesgo es relevante
-                if nivel in ["ALTO", "MEDIO"]:
-                    # Pasamos la fila como DataFrame (sin usar .to_numpy())
-                    df_muestra = X_inferencia.iloc[[i]]
-                    justificacion = self._extraer_justificacion(
-                        df_muestra, self.modelo, self.columnas_entrenamiento
-                    )
-                    df_riesgo.loc[idx, "justificacion_riesgo"] = justificacion
+            if modelo_b is None or columnas_b is None:
+                # Si el modelo de ese hito no existe, dejamos al alumno como no calculable por seguridad
+                continue
+
+            # Extraemos la fila preprocesada del alumno y la adaptamos al molde de su modelo
+            df_muestra_ml = df_ml_base.loc[[idx]]
+            X_inferencia = self._alinear_columnas(df_muestra_ml, columnas_b)
+
+            # Calcular probabilidad (Clase 1 = Abandono)
+            prob = float(modelo_b.predict_proba(X_inferencia)[0, 1])
+            df_riesgo.loc[idx, "probabilidad_abandono"] = prob
+
+            # Aplicar reglas de negocio para los umbrales
+            if prob >= 0.70:
+                nivel = "ALTO"
+            elif prob >= 0.40:
+                nivel = "MEDIO"
+            else:
+                nivel = "BAJO"
+
+            df_riesgo.loc[idx, "nivel_riesgo"] = nivel
+
+            # 4. Explicabilidad Local (XAI) con el árbol correcto
+            if nivel in ["ALTO", "MEDIO"]:
+                justificacion = self._extraer_justificacion(
+                    X_inferencia, modelo_b, columnas_b
+                )
+                df_riesgo.loc[idx, "justificacion_riesgo"] = (
+                    f"[Hito B{b_alumno}] {justificacion}"
+                )
+
         return df_riesgo
