@@ -4,61 +4,55 @@ from src.evaluador_riesgo import EvaluadorRiesgo
 
 
 class TestEvaluadorRiesgo:
-    """Batería de tests unitarios para la lógica de riesgo (Espiral 2)."""
+    """Batería de tests unitarios adaptada al motor de Machine Learning (Espiral 3)."""
 
     def setup_method(self):
         """Se ejecuta antes de cada test. Prepara el entorno."""
         self.evaluador = EvaluadorRiesgo()
 
-    def test_casos_cerrados_no_se_modifican(self):
-        # Simulamos un alumno que ya está RECIBIDO (BAJO)
-        row_bajo = pd.Series(
-            {"riesgo_admin": "BAJO", "nota_media": 2.0, "asistencia_media": 0.10}
-        )
-        # Simulamos un alumno que ya ABANDONÓ (ALTO)
-        row_alto = pd.Series(
-            {"riesgo_admin": "ALTO", "nota_media": 9.0, "asistencia_media": 0.95}
-        )
-
-        assert self.evaluador._aplicar_heuristica(row_bajo) == "BAJO"
-        assert self.evaluador._aplicar_heuristica(row_alto) == "ALTO"
-
-    def test_alumnos_fantasma_mantienen_estado(self):
-        # Simulamos un alumno con notas y asistencias a 0 absoluto
-        row_fantasma = pd.Series(
-            {"riesgo_admin": "MEDIO", "nota_media": 0.0, "asistencia_media": 0.0}
+    def test_casos_historicos_no_se_calculan(self):
+        """Verifica que los alumnos que ya han terminado (Recibido/Abandono) permanezcan intactos."""
+        df_test = pd.DataFrame(
+            [
+                {"estado_actual": "Recibido", "nota_b1": 8.0, "asist_b1": 0.90},
+                {"estado_actual": "Abandono", "nota_b1": 2.0, "asist_b1": 0.20},
+            ]
         )
 
-        assert self.evaluador._aplicar_heuristica(row_fantasma) == "MEDIO"
+        resultado = self.evaluador.ejecutar_evaluacion(df_test)
 
-    def test_penalizacion_por_mal_rendimiento(self):
-        # Alumno en curso pero que suspende o falta mucho
-        row_mala_nota = pd.Series(
-            {"riesgo_admin": "MEDIO", "nota_media": 4.0, "asistencia_media": 0.90}
-        )
-        row_mala_asist = pd.Series(
-            {"riesgo_admin": "MEDIO", "nota_media": 8.0, "asistencia_media": 0.20}
-        )
+        # Deben devolver obligatoriamente "HISTORICO/NO_CALCULABLE" por seguridad metodológica
+        assert resultado.loc[0, "nivel_riesgo"] == "HISTORICO/NO_CALCULABLE"
+        assert resultado.loc[1, "nivel_riesgo"] == "HISTORICO/NO_CALCULABLE"
+        assert pd.isna(resultado.loc[0, "probabilidad_abandono"])
 
-        assert self.evaluador._aplicar_heuristica(row_mala_nota) == "ALTO"
-        assert self.evaluador._aplicar_heuristica(row_mala_asist) == "ALTO"
-
-    def test_bonificacion_por_excelencia(self):
-        # Alumno en curso con notas excelentes
-        row_excelente = pd.Series(
-            {"riesgo_admin": "MEDIO", "nota_media": 8.5, "asistencia_media": 0.95}
-        )
-
-        assert self.evaluador._aplicar_heuristica(row_excelente) == "BAJO"
-
-    def test_alumno_intermedio(self):
-        # Alumno aprueba pero sin destacar, debería quedarse en MEDIO
-        row_normal = pd.Series(
-            {
-                "riesgo_admin": "NO CALCULABLE",
-                "nota_media": 6.0,
-                "asistencia_media": 0.60,
-            }
+    def test_inferencia_alumno_en_curso_b1(self):
+        """Verifica que un alumno activo sea evaluado y reciba una justificación con prefijo de hito."""
+        # Creamos un alumno "En curso" que solo tiene datos del Bimestre 1
+        df_test = pd.DataFrame(
+            [
+                {
+                    "estado_actual": "En curso",
+                    "nota_b1": 3.0,
+                    "asist_b1": 0.40,
+                    "nota_b2": 0.0,
+                    "asist_b2": 0.0,  # Futuro vacío
+                    "nota_b3": 0.0,
+                    "asist_b3": 0.0,
+                }
+            ]
         )
 
-        assert self.evaluador._aplicar_heuristica(row_normal) == "MEDIO"
+        resultado = self.evaluador.ejecutar_evaluacion(df_test)
+
+        # 1. El nivel de riesgo ya no debe ser el histórico predeterminado
+        assert resultado.loc[0, "nivel_riesgo"] in ["ALTO", "MEDIO", "BAJO"]
+        # 2. La probabilidad matemática debe haberse calculado
+        assert pd.notna(resultado.loc[0, "probabilidad_abandono"])
+
+        # 3. Si el riesgo requiere justificación, debe llevar la etiqueta del hito detectado [Hito B1]
+        nivel = resultado.loc[0, "nivel_riesgo"]
+        if nivel in ["ALTO", "MEDIO"]:
+            # Forzamos el casting a str para que Pylance reconozca el método startswith
+            justificacion = str(resultado.loc[0, "justificacion_riesgo"])
+            assert justificacion.startswith("[Hito B1]")
