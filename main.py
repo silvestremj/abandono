@@ -53,22 +53,34 @@ def main() -> None:
             "forzar_entrenamiento", False
         )
 
-        # Verificamos si los archivos del modelo ya existen
-        ruta_modelo = os.path.join(
-            os.path.dirname(__file__), "modelos", "arbol_decision.pkl"
+        # Verificamos si existe al menos el modelo del primer hito para decidir si entrenar
+        ruta_modelo_b1 = os.path.join(
+            os.path.dirname(__file__), "modelos", "arbol_b1.pkl"
         )
 
-        if forzar_entrenamiento or not os.path.exists(ruta_modelo):
-            log.registrar("INF_ML", "Iniciando fase de entrenamiento...")
+        if forzar_entrenamiento or not os.path.exists(ruta_modelo_b1):
+            log.registrar(
+                "INF_ML", "Iniciando fase de entrenamiento por puntos de control..."
+            )
             entrenador = EntrenadorModelos()
-            entrenador.entrenar_y_guardar(df_ml)
-            log.registrar("INF_ML", "Modelo entrenado y guardado.")
+
+            # Pasamos ambos parámetros: df_ml y el preparador
+            df_comparativo = entrenador.entrenar_y_guardar(df_ml, preparador)
+
+            log.registrar("INF_ML", "Modelos bimestrales entrenados y guardados.")
+
+            # Mostrar tabla comparativa
+            if not df_comparativo.empty:
+                print("\n" + "=" * 65)
+                print("      REPORTE COMPARATIVO DE PUNTOS DE CONTROL (HITOS)")
+                print("=" * 65)
+                print(df_comparativo.to_string(index=False))
+                print("=" * 65 + "\n")
         else:
             log.registrar(
                 "INF_ML",
-                "Saltando entrenamiento. Se usará el modelo existente en disco.",
+                "Saltando entrenamiento. Se usarán los modelos por hitos existentes en disco.",
             )
-
         # 6. Cálculo de Riesgo (Inferencia mediante modelo guardado)
         evaluador = EvaluadorRiesgo()
         df_final = evaluador.ejecutar_evaluacion(df_master)

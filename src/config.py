@@ -41,6 +41,7 @@ class ConfigLoader:
 
     @property
     def machine_learning(self) -> Dict[str, Any]:
+        """Devuelve el diccionario con la configuración de Machine Learning."""
         return self.config_data.get("machine_learning", {})
 
 
