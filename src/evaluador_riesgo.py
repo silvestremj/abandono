@@ -101,16 +101,25 @@ class EvaluadorRiesgo:
     def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:
         df_riesgo = df.copy()
 
-        # 1. Filtramos alumnos activos (los únicos que necesitan predicción)
+        # 1. Clasificar alumnos: HISTÓRICO (tienen target conocido) vs PRONÓSTICO (activos sin etiqueta)
+        def es_etiquetado(estado: str) -> bool:
+            est = str(estado).upper()
+            return any(p in est for p in self.reglas.get("palabras_bajo_riesgo", []) + self.reglas.get("palabras_alto_riesgo", []))
+
         def es_evaluable(estado: str) -> bool:
             est = str(estado).upper()
             return any(p in est for p in self.reglas.get("palabras_medio_riesgo", []))
 
+        mask_etiquetados = df_riesgo["estado_actual"].apply(es_etiquetado)
         mask_evaluables = df_riesgo["estado_actual"].apply(es_evaluable)
+
+        df_riesgo["tipo_prediccion"] = "SIN REGISTRO"
+        df_riesgo.loc[mask_etiquetados, "tipo_prediccion"] = "HISTÓRICO"
+        df_riesgo.loc[mask_evaluables, "tipo_prediccion"] = "PRONÓSTICO"
 
         # Inicializamos columnas de resultados
         df_riesgo["probabilidad_abandono"] = np.nan
-        df_riesgo["nivel_riesgo"] = "HISTORICO/NO_CALCULABLE"
+        df_riesgo["nivel_riesgo"] = "NO_CALCULABLE"
         df_riesgo["justificacion_riesgo"] = "N/A"
 
         df_evaluar = df_riesgo[mask_evaluables].copy()

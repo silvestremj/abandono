@@ -63,6 +63,12 @@ class EntrenadorModelos:
                 X, y, test_size=0.2, random_state=42
             )
 
+            total_etiquetados = len(y)
+            total_train = len(y_train)
+            total_test = len(y_test)
+            abandono_train = int(y_train.sum())
+            continua_train = total_train - abandono_train
+
             # 6. Configurar y entrenar el modelo de caja blanca con Cost-Sensitive Learning
             modelo = DecisionTreeClassifier(
                 max_depth=5, random_state=42, class_weight="balanced"
@@ -111,6 +117,11 @@ class EntrenadorModelos:
             historial_metricas.append(
                 {
                     "Hito": f"Bimestre {b}",
+                    "Registros etiquetados": total_etiquetados,
+                    "Train (80%)": total_train,
+                    "Test (20%)": total_test,
+                    "Abandono en train": abandono_train,
+                    "Continúa en train": continua_train,
                     "Accuracy": round(acc, 2),
                     "Recall (Abandono)": round(rec, 2),
                     "Variable Clave": top_variable,
@@ -121,5 +132,10 @@ class EntrenadorModelos:
         print("✔ Proceso de entrenamiento completado. Modelos guardados en disco.")
         print("=" * 55 + "\n")
 
-        # Retornamos el DataFrame con el histórico para usarlo en la Fase 5
-        return pd.DataFrame(historial_metricas)
+        df_metricas = pd.DataFrame(historial_metricas)
+
+        # Guardar métricas junto a los modelos para usarlas en ejecuciones posteriores
+        ruta_metricas = os.path.join(self.output_dir, "metricas.pkl")
+        joblib.dump(df_metricas, ruta_metricas)
+
+        return df_metricas

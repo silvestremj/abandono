@@ -272,22 +272,20 @@ class PreparadorDatos:
         Returns:
             pd.DataFrame: Un nuevo DataFrame sin los bimestres futuros.
         """
-        # Hacer una copia explícita para evitar mutar el DataFrame original
+        import re
+
         df_filtrado = df.copy()
 
+        # Detectar todas las columnas que siguen el patrón nota_b{N} o asist_b{N}
+        # y eliminar aquellas con N > bimestre_corte (funciona para cualquier N)
         columnas_a_eliminar = []
+        patron = re.compile(r"^(nota|asist)_b(\d+)$")
 
-        # Identificar columnas temporales de bimestres futuros (del corte + 1 hasta el 6)
-        for b in range(bimestre_corte + 1, 7):
-            col_nota = f"nota_b{b}"
-            col_asist = f"asist_b{b}"
+        for col in df_filtrado.columns:
+            m = patron.match(str(col))
+            if m and int(m.group(2)) > bimestre_corte:
+                columnas_a_eliminar.append(col)
 
-            if col_nota in df_filtrado.columns:
-                columnas_a_eliminar.append(col_nota)
-            if col_asist in df_filtrado.columns:
-                columnas_a_eliminar.append(col_asist)
-
-        # Eliminar las columnas acumuladas de una sola vez si existen
         if columnas_a_eliminar:
             df_filtrado = df_filtrado.drop(columns=columnas_a_eliminar)
 
