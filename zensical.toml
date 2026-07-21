@@ -1,5 +1,5 @@
 [project]
-site_name = "Predicción de Abandono Escolar - TFM"
+site_name = "Predicción de Abandono Escolar"
 site_description = "Documentación oficial del pipeline de datos y modelos."
 
 language = "es"

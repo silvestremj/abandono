@@ -35,6 +35,10 @@ class GestorBaseDatos:
             db_name: Nombre del archivo de SQLite. Si es ``None``, se usa
                 el valor de ``config.paths.db_name``.
         """
+        if db_name is None:
+            db_name = config.paths.get("db_name", "estudiantes.db")
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        self.db_path: str = os.path.join(base_dir, str(db_name))
 
     def inicializar_tablas_fijas(self) -> None:
         """Crea la tabla de logs necesaria para el arranque."""

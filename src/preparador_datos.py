@@ -36,6 +36,7 @@ class PreparadorDatos:
         Args:
             datasets_dict: Diccionario ``{clave: DataFrame}`` con los datos crudos.
         """
+        self.datasets: Dict[str, pd.DataFrame] = datasets_dict
 
     def _normalizar(self, df: pd.DataFrame, col: str) -> pd.Series:
         """
