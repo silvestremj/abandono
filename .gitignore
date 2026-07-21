@@ -21,5 +21,8 @@ __pycache__/
 logs/
 *.log
 
-# Documentación generada por MkDocs
+# Documentación generada por Zensical
 site/
+
+# Mensajes de commit
+commit_message.txt
