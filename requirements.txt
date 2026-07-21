@@ -8,3 +8,10 @@ pytest==8.4.2
 scikit-learn==1.7.2
 joblib==1.5.2
 streamlit==1.44.0
+
+# Documentación (mkdocstrings + Zensical)
+mkdocstrings[python]==1.0.3
+zensical==0.0.31
+
+# Linter y calidad de código
+ruff==0.12.0

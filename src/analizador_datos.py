@@ -1,12 +1,38 @@
+"""
+Módulo de análisis descriptivo y estadístico.
+
+Calcula estadísticas básicas sobre la tabla maestra para caracterizar
+la población de estudiantes del dataset.
+
+Uso::
+
+    from src.analizador_datos import Analizador
+    analizador = Analizador()
+    stats = analizador.calcular_estadisticas_basicas(df_master)
+"""
+
 from typing import Any, Dict
 
 import pandas as pd
 
 
 class Analizador:
-    """Módulo 3: Análisis descriptivo y temporal."""
+    """Análisis descriptivo y temporal de la tabla maestra.
+
+    Proporciona estadísticas resumen que ayudan a entender la distribución
+    y calidad de los datos antes del entrenamiento de modelos.
+    """
 
     def calcular_estadisticas_basicas(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calcula estadísticas descriptivas de la tabla maestra.
+
+        Args:
+            df: Tabla maestra de estudiantes.
+
+        Returns:
+            Diccionario con ``columna_analizada``, ``media_aritmetica``
+            y ``total_alumnos``, o ``error``/``warning`` en caso de fallo.
+        """
         # Validación defensiva
         if df is None or df.empty:
             return {"error": "El DataFrame está vacío"}

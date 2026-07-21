@@ -1,17 +1,41 @@
+"""
+Módulo de integración, limpieza y preparación de datos.
+
+Este módulo implementa las tareas de preprocesamiento esenciales:
+normalización de texto, deduplicación, tratamiento de nulos, mapeo de
+reglas de negocio, filtrado temporal por bimestre y codificación
+One-Hot para modelos de machine learning.
+
+Uso::
+
+    from src.preparador_datos import PreparadorDatos
+    preparador = PreparadorDatos(datasets)
+    df_master = preparador.ejecutar_preparacion()
+    df_ml = preparador.preparar_dataset_ml(df_master)
+"""
+
 from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 
-# Importa la configuración global
 from src.config import config
 
 
 class PreparadorDatos:
-    """Módulo 2: Integración y Limpieza."""
+    """Módulo 2: Integración y Limpieza de datos.
+
+    Attributes:
+        datasets: Diccionario de DataFrames de entrada indexados por clave
+            (``actual``, ``notas_bimestre``, etc.).
+    """
 
     def __init__(self, datasets_dict: Dict[str, pd.DataFrame]) -> None:
-        self.datasets: Dict[str, pd.DataFrame] = datasets_dict
+        """Inicializa el preparador con los DataFrames de entrada.
+
+        Args:
+            datasets_dict: Diccionario ``{clave: DataFrame}`` con los datos crudos.
+        """
 
     def _normalizar(self, df: pd.DataFrame, col: str) -> pd.Series:
         """
@@ -34,6 +58,15 @@ class PreparadorDatos:
         )
 
     def ejecutar_preparacion(self) -> pd.DataFrame:
+        """Genera la tabla maestra de estudiantes.
+
+        Aplica normalización, deduplicación, tratamiento de nulos, mapeo de
+        reglas de negocio, unificación de notas por bimestre y estandarización
+        de tipos.
+
+        Returns:
+            DataFrame con la tabla maestra lista para análisis y ML.
+        """
         # 1. Base y Target (del archivo Excel)
         df_base = self.datasets["actual"].copy()
 
@@ -196,9 +229,16 @@ class PreparadorDatos:
         return tabla_maestra
 
     def preparar_dataset_ml(self, df_maestro: pd.DataFrame) -> pd.DataFrame:
-        """
-        Genera un DataFrame numérico apto para entrenar o predecir con scikit-learn.
-        Aplica One-Hot Encoding y define el target binario.
+        """Genera un DataFrame numérico apto para scikit-learn.
+
+        Aplica One-Hot Encoding, crea ``target_ml`` binario y elimina
+        variables no predictivas y con data leakage.
+
+        Args:
+            df_maestro: Tabla maestra generada por :meth:`ejecutar_preparacion`.
+
+        Returns:
+            DataFrame preprocesado para entrenamiento de modelos.
         """
         df_ml = df_maestro.copy()
         reglas = config.reglas_riesgo

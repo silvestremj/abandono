@@ -1,13 +1,24 @@
-fix: corrección de errores de lógica, tests y compatibilidad multiplataforma
+feat: añadir docstrings completos, documentación Zensical y migrar desde mkdocs
 
-- Corregir test_evaluador.py: assert esperaba "HISTORICO/NO_CALCULABLE"
-  pero la implementación asigna "NO_CALCULABLE"
-- Corregir preparador_datos.py: exclusiones "unnamed:" → "Unnamed:"
-  para coincidir con los nombres reales generados por pandas
-- Corregir preparador_datos.py: excluir "nota" y "asist" también del
-  entrenamiento para evitar data leakage y alinearlo con la inferencia
-- Corregir config.py: manejar YAML vacío (None) tras yaml.safe_load()
-- Corregir ingestor_datos.py: usar utf-8-sig para eliminación automática
-  de BOM en archivos CSV
-- Corregir main.py: unificar imports después de sys.path.append
-- Corregir emojis/símbolos Unicode no imprimibles en consola Windows
+Docstrings:
+- Añadir docstrings de módulo, clase y método en los 10 archivos src/ y main.py
+- Corregir anotaciones de tipos faltantes en entrenador_modelos.py y visualizador.py
+
+Documentación:
+- Crear docs/index.md con descripción, requisitos, ejecución y estructura del proyecto
+- Crear docs/arquitectura.md con diagrama del pipeline y decisiones de diseño
+- Crear 10 archivos en docs/referencia/ con intro, ejemplos y tablas de cada módulo
+- Corregir docs/referencia/orquestador.md (referencia ::: rota)
+- Añadir configuracion.md y entrenador_modelos.md
+
+Migración a Zensical:
+- Eliminar mkdocs.yml
+- Crear zensical.toml (navegación, tema Material, mkdocstrings)
+- Actualizar requirements.txt: eliminar mkdocs-material y pymdown-extensions,
+  añadir zensical, mantener mkdocstrings[python] (mkdocs se instala como
+  dependencia transitiva)
+- Actualizar docs/index.md para eliminar referencias a mkdocs
+- Verificar build: Zensical genera 12 páginas sin errores
+
+Fix:
+- Corregir importación Figure en visualizador.py (plt.Figure → matplotlib.figure.Figure)

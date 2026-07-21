@@ -1,9 +1,30 @@
+"""
+Módulo de visualización y presentación de resultados.
+
+Proporciona dos interfaces de salida:
+- **Consola**: reporte de texto y exportación CSV.
+- **Streamlit (Web)**: interfaz interactiva con tabs de carga, resultados,
+  alertas y visualización de árboles de decisión (XAI).
+
+Uso en consola::
+
+    from src.visualizador import Visualizador
+    vista = Visualizador()
+    vista.mostrar_en_consola(df_final, stats)
+    vista.exportar_csv(df_final)
+
+Uso en Streamlit::
+
+    python -m src.visualizador
+"""
+
 import os
 import sys
 from datetime import datetime
 from typing import Optional
 
 import joblib
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
@@ -42,6 +63,14 @@ class Visualizador:
         configuracion: Optional[ConfigLoader] = None,
         gestor_logs: Optional[GestorLogs] = None,
     ):
+        """Inicializa el visualizador con configuración y logger opcionales.
+
+        Args:
+            configuracion: Instancia de :class:`ConfigLoader`. Si es ``None``
+                se usa la instancia global ``config``.
+            gestor_logs: Instancia de :class:`GestorLogs`. Si es ``None``
+                se crea una nueva.
+        """
         self.config = configuracion or config
         self.logger = gestor_logs or GestorLogs()
 
@@ -49,6 +78,12 @@ class Visualizador:
     # Compatibilidad con pipeline de consola (main.py)
     # ======================================================================
     def mostrar_en_consola(self, df_riesgo: pd.DataFrame, stats: dict) -> None:
+        """Muestra un reporte de texto en la consola con el conteo por nivel de riesgo.
+
+        Args:
+            df_riesgo: DataFrame con la columna ``nivel_riesgo``.
+            stats: Estadísticas calculadas por el :class:`Analizador`.
+        """
         if df_riesgo.empty:
             print("No hay datos para mostrar.")
             return
@@ -60,6 +95,14 @@ class Visualizador:
             print(f"  {nivel}: {conteo.get(nivel, 0)}")
 
     def exportar_csv(self, df_riesgo: pd.DataFrame) -> Optional[str]:
+        """Exporta el DataFrame de riesgos a un archivo CSV con timestamp.
+
+        Args:
+            df_riesgo: DataFrame con los resultados de evaluación.
+
+        Returns:
+            Ruta absoluta del archivo CSV generado, o ``None`` si está vacío.
+        """
         if df_riesgo.empty:
             return None
         ts = datetime.now().strftime("%Y%m%d_%H%M")
@@ -76,7 +119,17 @@ class Visualizador:
     # ======================================================================
     def graficar_arbol(
         self, bimestre: int, max_depth: int = 3, guardar_ruta: Optional[str] = None
-    ):
+    ) -> Optional[Figure]:
+        """Genera la visualización gráfica del árbol de decisión de un bimestre.
+
+        Args:
+            bimestre: Número de bimestre (1-6).
+            max_depth: Profundidad máxima a mostrar en el árbol.
+            guardar_ruta: Si se indica, guarda la imagen PNG en esta ruta.
+
+        Returns:
+            Figura de matplotlib o ``None`` si el modelo no existe.
+        """
         base_dir = os.path.dirname(os.path.dirname(__file__))
         ruta_modelo = os.path.join(base_dir, "modelos", f"arbol_b{bimestre}.pkl")
         ruta_columnas = os.path.join(base_dir, "modelos", f"columnas_b{bimestre}.pkl")
@@ -119,6 +172,11 @@ class Visualizador:
     # Pipeline completo
     # ======================================================================
     def _ejecutar_pipeline(self) -> pd.DataFrame:
+        """Ejecuta el pipeline completo de datos para la interfaz web.
+
+        Returns:
+            DataFrame con los resultados de evaluación de riesgo.
+        """
         db = GestorBaseDatos()
         db.inicializar_tablas_fijas()
         log = GestorLogs(gestor_db=db)
@@ -162,6 +220,7 @@ class Visualizador:
     # Interfaz Streamlit
     # ======================================================================
     def generar_interfaz_web(self):
+        """Lanza la interfaz de Streamlit con los cuatro tabs principales."""
         st.title("Sistema predictivo de abandono académico")
         st.markdown("---")
 

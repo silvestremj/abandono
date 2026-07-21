@@ -1,3 +1,16 @@
+"""
+Módulo de trazabilidad y logs (triple salida: consola, fichero, base de datos).
+
+Registra cada evento del pipeline en tres destinos simultáneos para
+garantizar auditoría completa y recuperabilidad ante fallos.
+
+Uso::
+
+    from src.gestor_logs import GestorLogs
+    log = GestorLogs()
+    log.registrar("MODULO", "Operación completada")
+"""
+
 import logging
 import os
 from datetime import datetime
@@ -7,7 +20,15 @@ from src.gestor_base_datos import GestorBaseDatos
 
 
 class GestorLogs:
-    """Módulo 6: Trazabilidad y Logs (Triple salida: Consola, DB, Fichero)."""
+    """Sistema de trazabilidad híbrida: consola, fichero y base de datos.
+
+    Attributes:
+        db: Instancia de :class:`GestorBaseDatos` para persistir logs en SQLite.
+            Si es ``None``, solo se escribe en consola y fichero.
+        sesion: Marca de tiempo del inicio de la sesión de ejecución.
+        log_dir: Ruta absoluta al directorio de logs.
+        logger: Instancia del logger nativo de Python para escritura en fichero.
+    """
 
     def __init__(self, gestor_db: Optional[GestorBaseDatos] = None) -> None:
         """Inicializa la sesión y los manejadores de logs.
@@ -46,7 +67,13 @@ class GestorLogs:
         self.logger.info(f"--- Inicio de Sesión: {self.sesion} ---")
 
     def registrar(self, modulo: str, mensaje: str, estado: str = "EXITO") -> None:
-        """Registra un evento en consola, fichero y base de datos."""
+        """Registra un evento en los tres destinos configurados.
+
+        Args:
+            modulo: Identificador del módulo que genera el registro.
+            mensaje: Descripción del evento.
+            estado: Nivel del registro. Por defecto ``EXITO``.
+        """
         hora: str = datetime.now().strftime("%H:%M:%S")
 
         # 1. Salida por consola (vista en tiempo real)

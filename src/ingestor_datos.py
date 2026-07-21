@@ -1,17 +1,40 @@
+"""
+Módulo de ingesta y carga de datos.
+
+Lee los archivos de entrada (CSV y Excel) definidos en ``config.yaml``,
+los carga en DataFrames de pandas y los almacena para su uso posterior
+en el pipeline de preparación.
+
+Uso::
+
+    from src.ingestor_datos import IngestorDatos
+    ingestor = IngestorDatos()
+    datasets = ingestor.leer_datos()
+"""
+
 import os
 from typing import Dict, Optional
 
 import pandas as pd
 
-# Importamos la configuración
-# Nota: Asegúrate de que 'config.py' esté en el mismo nivel que 'ingestor_datos.py' o ajusta la ruta de importación según sea necesario.
 from src.config import config
 
 
 class IngestorDatos:
-    """Módulo 1: Carga y validación de datos."""
+    """Módulo 1: Carga y validación de datos de entrada.
+
+    Attributes:
+        ruta: Ruta absoluta al directorio de datos.
+        datasets: Diccionario con los DataFrames cargados, indexados por clave.
+    """
 
     def __init__(self, ruta_data: Optional[str] = None) -> None:
+        """Inicializa el ingestor con la ruta al directorio de datos.
+
+        Args:
+            ruta_data: Ruta al directorio de datos. Si es ``None``, se usa
+                ``config.paths.data_dir`` relativo a la raíz del proyecto.
+        """
         if ruta_data is None:
             # Sube un nivel desde 'src' y concatena con la ruta del YAML
             base_dir: str = os.path.dirname(os.path.dirname(__file__))
@@ -22,7 +45,11 @@ class IngestorDatos:
         self.datasets: Dict[str, pd.DataFrame] = {}
 
     def leer_datos(self) -> Dict[str, pd.DataFrame]:
-        # Trae la configuración de los datasets desde el YAML
+        """Lee todos los archivos definidos en ``config.datasets``.
+
+        Returns:
+            Diccionario ``{clave: DataFrame}`` con los datos cargados.
+        """
         archivos: Dict[str, Dict[str, str]] = config.datasets
 
         for clave, conf in archivos.items():

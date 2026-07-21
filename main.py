@@ -1,3 +1,15 @@
+"""
+Orquestador principal del pipeline de predicción de abandono escolar.
+
+Coordina las fases del sistema: ingesta, preparación, análisis descriptivo,
+entrenamiento de modelos por hitos bimestrales, evaluación de riesgo y
+presentación de resultados (consola + exportación CSV).
+
+Este módulo se ejecuta como punto de entrada del proyecto::
+
+    python main.py
+"""
+
 import os
 import sys
 

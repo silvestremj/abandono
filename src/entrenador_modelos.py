@@ -1,3 +1,17 @@
+"""
+Módulo de entrenamiento de modelos por hitos bimestrales.
+
+Entrena un árbol de decisión independiente para cada bimestre (1-6),
+almacena los modelos y sus columnas en disco, y genera un historial
+de métricas comparativas entre hitos temporales.
+
+Uso::
+
+    from src.entrenador_modelos import EntrenadorModelos
+    entrenador = EntrenadorModelos()
+    df_metricas = entrenador.entrenar_y_guardar(df_ml, preparador)
+"""
+
 import os
 from typing import Optional
 
@@ -9,9 +23,20 @@ from sklearn.tree import DecisionTreeClassifier
 
 
 class EntrenadorModelos:
-    """Módulo auxiliar: Entrenamiento del árbol de decisión (Caja Blanca)."""
+    """Entrenamiento del árbol de decisión por puntos de control bimestrales.
+
+    Attributes:
+        output_dir: Ruta absoluta al directorio donde se guardan los modelos
+            y métricas (``modelos/``).
+    """
 
     def __init__(self, output_dir: Optional[str] = None) -> None:
+        """Inicializa el entrenador y crea el directorio de salida si no existe.
+
+        Args:
+            output_dir: Ruta al directorio de modelos. Si es ``None``, se crea
+                la carpeta ``modelos/`` en la raíz del proyecto.
+        """
         if output_dir is None:
             # Crea una carpeta 'modelos' en la raíz del proyecto
             base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -22,7 +47,7 @@ class EntrenadorModelos:
         os.makedirs(self.output_dir, exist_ok=True)
         # La ruta base ya no es un único archivo, la gestionamos dinámicamente en el bucle
 
-    def entrenar_y_guardar(self, df_ml: pd.DataFrame, preparador) -> pd.DataFrame:
+    def entrenar_y_guardar(self, df_ml: pd.DataFrame, preparador: "PreparadorDatos") -> pd.DataFrame:
         """
         Entrena múltiples modelos independientes por cada hito bimestral
         y almacena sus métricas para permitir la comparación temporal.

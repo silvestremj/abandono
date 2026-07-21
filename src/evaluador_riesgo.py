@@ -1,3 +1,17 @@
+"""
+Módulo de evaluación de riesgo mediante inferencia ML.
+
+Carga los modelos bimestrales previamente entrenados, detecta el hito
+temporal de cada alumno, alinea las columnas al esquema de entrenamiento
+y calcula la probabilidad de abandono con explicabilidad local (XAI).
+
+Uso::
+
+    from src.evaluador_riesgo import EvaluadorRiesgo
+    evaluador = EvaluadorRiesgo()
+    df_final = evaluador.ejecutar_evaluacion(df_master)
+"""
+
 import os
 from typing import Any, Dict, Optional
 
@@ -5,15 +19,27 @@ import joblib
 import numpy as np
 import pandas as pd
 
-# Importa la configuración global
 from src.config import config
 
 
 class EvaluadorRiesgo:
-    """Módulo 4: Cálculo de riesgo mediante ML por Puntos de Control y Explicabilidad."""
+    """Evaluación de riesgo por hitos bimestrales con explicabilidad.
+
+    Attributes:
+        reglas: Diccionario con las reglas de negocio para clasificación
+            de estados (bajo, medio, alto riesgo).
+        model_dir: Ruta al directorio de modelos guardados.
+        modelos_cache: Caché de modelos cargados por bimestre.
+        columnas_cache: Caché de listas de columnas por bimestre.
+    """
 
     def __init__(self, model_dir: Optional[str] = None) -> None:
-        # Carga las reglas del YAML al instanciar la clase
+        """Inicializa el evaluador cargando reglas y configurando rutas.
+
+        Args:
+            model_dir: Directorio de modelos. Si es ``None``, se usa
+                ``modelos/`` en la raíz del proyecto.
+        """
         self.reglas: Dict[str, Any] = config.reglas_riesgo
 
         if model_dir is None:
@@ -28,7 +54,14 @@ class EvaluadorRiesgo:
         self.columnas_cache: Dict[int, list] = {}
 
     def _obtener_modelo_bimestre(self, bimestre: int) -> tuple:
-        """Carga bajo demanda (Lazy Loading) el modelo y las columnas de un bimestre específico."""
+        """Carga bajo demanda (Lazy Loading) el modelo y las columnas de un bimestre.
+
+        Args:
+            bimestre: Número de bimestre (1-6).
+
+        Returns:
+            Tupla ``(modelo, columnas)`` o ``(None, None)`` si no existe.
+        """
         if bimestre not in self.modelos_cache:
             ruta_modelo = os.path.join(self.model_dir, f"arbol_b{bimestre}.pkl")
             ruta_columnas = os.path.join(self.model_dir, f"columnas_b{bimestre}.pkl")
@@ -42,7 +75,14 @@ class EvaluadorRiesgo:
         return self.modelos_cache[bimestre], self.columnas_cache[bimestre]
 
     def _detectar_bimestre_alumno(self, fila_alumno: pd.Series) -> int:
-        """Determina el hito temporal actual del alumno basándose en sus notas registradas."""
+        """Determina el hito temporal actual del alumno buscando desde B6 hacia B1.
+
+        Args:
+            fila_alumno: Fila del DataFrame con los datos del alumno.
+
+        Returns:
+            Número de bimestre detectado (1-6). Por defecto 1.
+        """
         # Buscamos de atrás hacia adelante (del bimestre 6 al 1) cuál es el primero con datos válidos
         for b in range(6, 0, -1):
             col_nota = f"nota_b{b}"
@@ -56,7 +96,17 @@ class EvaluadorRiesgo:
     def _alinear_columnas(
         self, df_ml: pd.DataFrame, columnas_entrenamiento: list
     ) -> pd.DataFrame:
-        """Asegura que el dataset de inferencia tenga la misma estructura que el de entrenamiento."""
+        """Alinea el dataset de inferencia al esquema de columnas de entrenamiento.
+
+        Añade como ceros las columnas faltantes y elimina las sobrantes.
+
+        Args:
+            df_ml: Dataset de inferencia preprocesado.
+            columnas_entrenamiento: Lista ordenada de columnas del modelo.
+
+        Returns:
+            DataFrame alineado con las columnas del modelo.
+        """
         columnas_faltantes = [
             col for col in columnas_entrenamiento if col not in df_ml.columns
         ]
@@ -72,7 +122,16 @@ class EvaluadorRiesgo:
     def _extraer_justificacion(
         self, df_muestra: pd.DataFrame, modelo: Any, columnas_entrenamiento: list
     ) -> str:
-        """Genera la regla en texto plano recorriendo el camino del árbol de decisión."""
+        """Extrae la justificación XAI recorriendo el camino del árbol de decisión.
+
+        Args:
+            df_muestra: Fila de datos del alumno (1 registro).
+            modelo: Árbol de decisión entrenado.
+            columnas_entrenamiento: Lista de columnas del modelo.
+
+        Returns:
+            cadena de texto con las reglas del camino (``AND`` separadas).
+        """
         nodo_indicador = modelo.decision_path(df_muestra)
         nodos_ids = nodo_indicador.indices
 
@@ -99,6 +158,19 @@ class EvaluadorRiesgo:
         return " AND ".join(reglas)
 
     def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Ejecuta la evaluación de riesgo completa sobre la tabla maestra.
+
+        Clasifica a cada alumno como HISTÓRICO, PRONÓSTICO o SIN REGISTRO.
+        Para los PRONÓSTICOS, infiere probabilidad de abandono usando el modelo
+        del bimestre correspondiente, asigna nivel de riesgo y genera justificación XAI.
+
+        Args:
+            df: Tabla maestra de estudiantes.
+
+        Returns:
+            DataFrame con columnas añadidas: ``tipo_prediccion``,
+            ``probabilidad_abandono``, ``nivel_riesgo``, ``justificacion_riesgo``.
+        """
         df_riesgo = df.copy()
 
         # 1. Clasificar alumnos: HISTÓRICO (tienen target conocido) vs PRONÓSTICO (activos sin etiqueta)
