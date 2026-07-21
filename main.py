@@ -1,14 +1,12 @@
 import os
 import sys
 
-from src.entrenador_modelos import EntrenadorModelos
-
 # Aseguramos que Python encuentre los módulos dentro de 'src'
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
-# Imports con los nombres de archivos y clases
 from src.analizador_datos import Analizador
 from src.config import config
+from src.entrenador_modelos import EntrenadorModelos
 from src.evaluador_riesgo import EvaluadorRiesgo
 from src.gestor_base_datos import GestorBaseDatos
 from src.gestor_logs import GestorLogs

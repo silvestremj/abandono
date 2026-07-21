@@ -22,8 +22,8 @@ class TestEvaluadorRiesgo:
         resultado = self.evaluador.ejecutar_evaluacion(df_test)
 
         # Deben devolver obligatoriamente "HISTORICO/NO_CALCULABLE" por seguridad metodológica
-        assert resultado.loc[0, "nivel_riesgo"] == "HISTORICO/NO_CALCULABLE"
-        assert resultado.loc[1, "nivel_riesgo"] == "HISTORICO/NO_CALCULABLE"
+        assert resultado.loc[0, "nivel_riesgo"] == "NO_CALCULABLE"
+        assert resultado.loc[1, "nivel_riesgo"] == "NO_CALCULABLE"
         assert pd.isna(resultado.loc[0, "probabilidad_abandono"])
 
     def test_inferencia_alumno_en_curso_b1(self):

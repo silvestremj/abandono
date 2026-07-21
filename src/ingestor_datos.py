@@ -31,8 +31,12 @@ class IngestorDatos:
             if os.path.exists(path):
                 print(f"Cargando {clave} desde {conf['nombre']}...")
                 if conf["tipo"] == "csv":
+                    encoding = conf.get("encoding", "utf-8")
+                    # utf-8-sig elimina el BOM al inicio de archivos provenientes de Excel
+                    if encoding == "utf-8":
+                        encoding = "utf-8-sig"
                     self.datasets[clave] = pd.read_csv(
-                        path, sep=conf["sep"], encoding=conf["encoding"]
+                        path, sep=conf["sep"], encoding=encoding
                     )
                 elif conf["tipo"] == "excel":
                     # Importante: Tener instalado 'openpyxl'

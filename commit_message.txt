@@ -1,0 +1,13 @@
+fix: corrección de errores de lógica, tests y compatibilidad multiplataforma
+
+- Corregir test_evaluador.py: assert esperaba "HISTORICO/NO_CALCULABLE"
+  pero la implementación asigna "NO_CALCULABLE"
+- Corregir preparador_datos.py: exclusiones "unnamed:" → "Unnamed:"
+  para coincidir con los nombres reales generados por pandas
+- Corregir preparador_datos.py: excluir "nota" y "asist" también del
+  entrenamiento para evitar data leakage y alinearlo con la inferencia
+- Corregir config.py: manejar YAML vacío (None) tras yaml.safe_load()
+- Corregir ingestor_datos.py: usar utf-8-sig para eliminación automática
+  de BOM en archivos CSV
+- Corregir main.py: unificar imports después de sys.path.append
+- Corregir emojis/símbolos Unicode no imprimibles en consola Windows

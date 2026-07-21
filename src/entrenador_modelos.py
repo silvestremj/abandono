@@ -129,7 +129,7 @@ class EntrenadorModelos:
                 }
             )
 
-        print("✔ Proceso de entrenamiento completado. Modelos guardados en disco.")
+        print("Proceso de entrenamiento completado. Modelos guardados en disco.")
         print("=" * 55 + "\n")
 
         df_metricas = pd.DataFrame(historial_metricas)

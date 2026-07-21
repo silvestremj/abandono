@@ -52,7 +52,7 @@ class PreparadorDatos:
 
         if filas_antes != filas_despues:
             print(
-                f"🧹Preprocesamiento: Se eliminaron {filas_antes - filas_despues} registros duplicados en la base."
+                f"Preprocesamiento: Se eliminaron {filas_antes - filas_despues} registros duplicados en la base."
             )
         # --------------------------------------------------------------
 
@@ -232,14 +232,16 @@ class PreparadorDatos:
             "fecha_estado",  # Fuga de datos
             "cohorte",
             "year",
+            "nota",  # Media global (data leakage para modelos por bimestre)
+            "asist",  # Media global (data leakage para modelos por bimestre)
             "tf_nota",
             "tf_asist",
             "tf_recibido",
             "cant",  # No accionables
-            "unnamed: 28",
-            "unnamed: 29",
-            "unnamed: 30",
-            "unnamed: 31",  # Basura del excel
+            "Unnamed: 28",
+            "Unnamed: 29",
+            "Unnamed: 30",
+            "Unnamed: 31",  # Basura del excel
             "ocupacion",  # No es predictiva y tiene muchos valores únicos (alta cardinalidad)
             "ciudad",  # Alta cardinalidad
         ]

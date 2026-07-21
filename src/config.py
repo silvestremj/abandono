@@ -17,7 +17,8 @@ class ConfigLoader:
         """Lee el archivo YAML de forma segura."""
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
+                data = yaml.safe_load(f)
+                return data if isinstance(data, dict) else {}
         except FileNotFoundError:
             print(
                 f" Error: No se encontró el archivo de configuración en {self.config_path}"
