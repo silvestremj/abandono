@@ -21,6 +21,76 @@ import pandas as pd
 
 from src.config import config
 
+# ======================================================================
+# Columnas que se excluyen del dataset antes de la inferencia
+# ======================================================================
+COLS_EXCLUIR = [
+    "n_siu",
+    "fecha",
+    "fecha_nacimiento",
+    "estado_actual",
+    "año_estado",
+    "comentario",
+    "target",
+    "target_ml",
+    "nota",
+    "asist",
+    # Columnas añadidas por ejecutar_evaluacion — nunca deben entrar al modelo
+    "tipo_prediccion",
+    "nivel_riesgo",
+    "probabilidad_abandono",
+    "justificacion_riesgo",
+]
+
+
+def preprocesar_fila_alumno(
+    fila: pd.Series,
+    columnas_entrenamiento: list,
+) -> Optional[pd.DataFrame]:
+    """Preprocesa una fila individual de alumno para obtener el vector de
+    características listo para inferencia con el modelo.
+
+    Aplica el mismo pipeline que :meth:`EvaluadorRiesgo.ejecutar_evaluacion`:
+    exclusión de columnas no relevantes, codificación *one-hot* de categóricas
+    y alineación exacta al esquema de columnas usado durante el entrenamiento.
+
+    Args:
+        fila: Serie de pandas con los datos brutos del alumno (una fila del
+            DataFrame **master**).
+        columnas_entrenamiento: Lista de nombres de columnas que espera el
+            modelo entrenado (cargadas desde ``columnas_b*.pkl``).
+
+    Returns:
+        DataFrame de una sola fila listo para ``model.predict_proba`` o
+        ``model.decision_path``, o ``None`` si ocurre algún error.
+    """
+    try:
+        df = pd.DataFrame([fila])
+
+        df_ml = df.drop(
+            columns=[c for c in COLS_EXCLUIR if c in df.columns],
+            errors="ignore",
+        )
+
+        cols_categoricas = df_ml.select_dtypes(include=["object"]).columns.tolist()
+        df_ml = pd.get_dummies(
+            df_ml, columns=cols_categoricas, dummy_na=False, drop_first=True
+        )
+
+        columnas_faltantes = [
+            col for col in columnas_entrenamiento if col not in df_ml.columns
+        ]
+        if columnas_faltantes:
+            df_faltantes = pd.DataFrame(
+                0, index=df_ml.index, columns=columnas_faltantes
+            )
+            df_ml = pd.concat([df_ml, df_faltantes], axis=1)
+
+        return df_ml[columnas_entrenamiento]
+
+    except Exception:
+        return None
+
 
 class EvaluadorRiesgo:
     """Evaluación de riesgo por hitos bimestrales con explicabilidad.
@@ -92,32 +162,6 @@ class EvaluadorRiesgo:
                 if pd.notna(valor_nota) and valor_nota > 0:
                     return b
         return 1  # Por defecto, si no hay notas registradas aún, se evalúa con el modelo del Bimestre 1
-
-    def _alinear_columnas(
-        self, df_ml: pd.DataFrame, columnas_entrenamiento: list
-    ) -> pd.DataFrame:
-        """Alinea el dataset de inferencia al esquema de columnas de entrenamiento.
-
-        Añade como ceros las columnas faltantes y elimina las sobrantes.
-
-        Args:
-            df_ml: Dataset de inferencia preprocesado.
-            columnas_entrenamiento: Lista ordenada de columnas del modelo.
-
-        Returns:
-            DataFrame alineado con las columnas del modelo.
-        """
-        columnas_faltantes = [
-            col for col in columnas_entrenamiento if col not in df_ml.columns
-        ]
-
-        if columnas_faltantes:
-            df_faltantes = pd.DataFrame(
-                0, index=df_ml.index, columns=columnas_faltantes
-            )
-            df_ml = pd.concat([df_ml, df_faltantes], axis=1)
-
-        return df_ml[columnas_entrenamiento]
 
     def _extraer_justificacion(
         self, df_muestra: pd.DataFrame, modelo: Any, columnas_entrenamiento: list
@@ -199,31 +243,7 @@ class EvaluadorRiesgo:
         if df_evaluar.empty:
             return df_riesgo
 
-        # 2. Preprocesamiento base (Eliminación de IDs y codificación de categorías)
-        cols_excluir = [
-            "n_siu",
-            "fecha",
-            "fecha_nacimiento",
-            "estado_actual",
-            "año_estado",
-            "comentario",
-            "target",
-            "target_ml",
-            "nota",
-            "asist",
-        ]
-
-        df_ml_base = df_evaluar.drop(
-            columns=[c for c in cols_excluir if c in df_evaluar.columns],
-            errors="ignore",
-        )
-
-        cols_categoricas = df_ml_base.select_dtypes(include=["object"]).columns.tolist()
-        df_ml_base = pd.get_dummies(
-            df_ml_base, columns=cols_categoricas, dummy_na=False, drop_first=True
-        )
-
-        # 3. Inferencia individualizada por hito temporal
+        # 2. Inferencia individualizada por hito temporal
         for idx in df_evaluar.index:
             fila_original = df_evaluar.loc[idx]
 
@@ -237,9 +257,10 @@ class EvaluadorRiesgo:
                 # Si el modelo de ese hito no existe, dejamos al alumno como no calculable por seguridad
                 continue
 
-            # Extraemos la fila preprocesada del alumno y la adaptamos al molde de su modelo
-            df_muestra_ml = df_ml_base.loc[[idx]]
-            X_inferencia = self._alinear_columnas(df_muestra_ml, columnas_b)
+            # Preprocesar la fila del alumno alineándola al esquema del modelo del bimestre actual
+            X_inferencia = preprocesar_fila_alumno(fila_original, columnas_b)
+            if X_inferencia is None:
+                continue
 
             # Calcular probabilidad (Clase 1 = Abandono)
             prob = float(modelo_b.predict_proba(X_inferencia)[0, 1])
