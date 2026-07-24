@@ -21,6 +21,8 @@ from sklearn.metrics import accuracy_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 
+from src.config import config
+
 
 class EntrenadorModelos:
     """Entrenamiento del árbol de decisión por puntos de control bimestrales.
@@ -47,6 +49,25 @@ class EntrenadorModelos:
         os.makedirs(self.output_dir, exist_ok=True)
         # La ruta base ya no es un único archivo, la gestionamos dinámicamente en el bucle
 
+    @staticmethod
+    def debe_entrenar(ruta_modelo_b1: str) -> bool:
+        """Determina si corresponde (re)entrenar los modelos por hitos.
+
+        Centraliza el criterio para que todos los puntos de entrada del
+        pipeline (CLI y Streamlit) decidan exactamente igual: se reentrena
+        si ``forzar_entrenamiento`` está activo en ``config.yaml`` o si
+        todavía no existe el modelo del primer hito en disco.
+
+        Args:
+            ruta_modelo_b1: Ruta al fichero ``arbol_b1.pkl`` esperado.
+
+        Returns:
+            ``True`` si debe (re)entrenarse, ``False`` si pueden reutilizarse
+            los modelos existentes en disco.
+        """
+        forzar = config.machine_learning.get("forzar_entrenamiento", False)
+        return forzar or not os.path.exists(ruta_modelo_b1)
+
     def entrenar_y_guardar(self, df_ml: pd.DataFrame, preparador: "PreparadorDatos") -> pd.DataFrame:
         """
         Entrena múltiples modelos independientes por cada hito bimestral
@@ -72,8 +93,9 @@ class EntrenadorModelos:
         print(" INICIANDO ENTRENAMIENTO POR PUNTOS DE CONTROL (XAI)")
         print("=" * 55)
 
-        # 2. Bucle secuencial del bimestre 1 al 6 (o los que defina el sistema)
-        for b in range(1, 7):
+        # 2. Bucle secuencial del bimestre 1 al máximo definido en config.yaml
+        max_bimestre = config.machine_learning.get("max_bimestre", 6)
+        for b in range(1, max_bimestre + 1):
             # 3. Aplicar el filtro dinámico de la Fase 3
             df_bimestre = preparador.filtrar_columnas_por_bimestre(
                 df_entrenamiento_maestro, b
@@ -84,9 +106,23 @@ class EntrenadorModelos:
             y = df_bimestre["target_ml"]
 
             # 5. División en conjunto de entrenamiento y prueba (80% / 20%) manteniendo tu semilla
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
+            # Estratificamos por 'y' para asegurar que el test conserve la misma proporción
+            # de abandono/continúa que el conjunto completo (evita Recall inestable o en 0
+            # por azar en bimestres con pocas etiquetas de abandono).
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y
+                )
+            except ValueError:
+                # Estratificar exige al menos 2 muestras por clase; si algún bimestre no las
+                # tiene, hacemos fallback a un split sin estratificar en lugar de fallar.
+                print(
+                    f"Aviso: no se pudo estratificar el split del Bimestre {b} "
+                    "(clase minoritaria insuficiente). Usando split simple."
+                )
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
 
             total_etiquetados = len(y)
             total_train = len(y_train)

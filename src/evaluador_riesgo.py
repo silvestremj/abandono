@@ -20,21 +20,19 @@ import numpy as np
 import pandas as pd
 
 from src.config import config
+from src.preparador_datos import COLUMNAS_EXCLUIDAS_ML
 
 # ======================================================================
-# Columnas que se excluyen del dataset antes de la inferencia
+# Columnas que se excluyen del dataset antes de la inferencia.
+#
+# Reutiliza la misma lista de exclusión que el entrenamiento
+# (:data:`src.preparador_datos.COLUMNAS_EXCLUIDAS_ML`) para que ambas fases
+# del pipeline nunca puedan desincronizarse, y añade las columnas que solo
+# existen en tiempo de inferencia (el target de entrenamiento y las columnas
+# de resultado que genera :meth:`EvaluadorRiesgo.ejecutar_evaluacion`).
 # ======================================================================
-COLS_EXCLUIR = [
-    "n_siu",
-    "fecha",
-    "fecha_nacimiento",
-    "estado_actual",
-    "año_estado",
-    "comentario",
-    "target",
+COLS_EXCLUIR = COLUMNAS_EXCLUIDAS_ML + [
     "target_ml",
-    "nota",
-    "asist",
     # Columnas añadidas por ejecutar_evaluacion — nunca deben entrar al modelo
     "tipo_prediccion",
     "nivel_riesgo",
@@ -111,6 +109,7 @@ class EvaluadorRiesgo:
                 ``modelos/`` en la raíz del proyecto.
         """
         self.reglas: Dict[str, Any] = config.reglas_riesgo
+        self.max_bimestre: int = config.machine_learning.get("max_bimestre", 6)
 
         if model_dir is None:
             # Crea una carpeta 'modelos' en la raíz del proyecto
@@ -145,16 +144,17 @@ class EvaluadorRiesgo:
         return self.modelos_cache[bimestre], self.columnas_cache[bimestre]
 
     def _detectar_bimestre_alumno(self, fila_alumno: pd.Series) -> int:
-        """Determina el hito temporal actual del alumno buscando desde B6 hacia B1.
+        """Determina el hito temporal actual del alumno buscando desde el último
+        bimestre configurado hacia B1.
 
         Args:
             fila_alumno: Fila del DataFrame con los datos del alumno.
 
         Returns:
-            Número de bimestre detectado (1-6). Por defecto 1.
+            Número de bimestre detectado (1-``self.max_bimestre``). Por defecto 1.
         """
-        # Buscamos de atrás hacia adelante (del bimestre 6 al 1) cuál es el primero con datos válidos
-        for b in range(6, 0, -1):
+        # Buscamos de atrás hacia adelante (del último bimestre al 1) cuál es el primero con datos válidos
+        for b in range(self.max_bimestre, 0, -1):
             col_nota = f"nota_b{b}"
             if col_nota in fila_alumno.index:
                 valor_nota = fila_alumno[col_nota]

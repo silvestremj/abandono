@@ -460,7 +460,7 @@ class Visualizador:
         modelo_b1 = os.path.join(
             os.path.dirname(os.path.dirname(__file__)), "modelos", "arbol_b1.pkl"
         )
-        if not os.path.exists(modelo_b1):
+        if EntrenadorModelos.debe_entrenar(modelo_b1):
             df_ml = preparador.preparar_dataset_ml(df_master)
             entrenador = EntrenadorModelos()
             st.session_state.df_metricas = entrenador.entrenar_y_guardar(df_ml, preparador)
@@ -529,7 +529,10 @@ class Visualizador:
 
             if archivos:
                 for f in archivos:
-                    ruta = os.path.join(data_dir, f.name)
+                    # os.path.basename evita path traversal si el nombre del
+                    # fichero subido contiene separadores de ruta (ej. "../").
+                    nombre_seguro = os.path.basename(f.name)
+                    ruta = os.path.join(data_dir, nombre_seguro)
                     with open(ruta, "wb") as fp:
                         fp.write(f.getbuffer())
 
@@ -707,8 +710,11 @@ class Visualizador:
             "que el modelo ha seguido para asignarle su nivel de riesgo."
         )
 
+        max_bimestre = self.config.machine_learning.get("max_bimestre", 6)
         bimestre = st.selectbox(
-            "Seleccionar bimestre", range(1, 7), format_func=lambda b: f"Bimestre {b}"
+            "Seleccionar bimestre",
+            range(1, max_bimestre + 1),
+            format_func=lambda b: f"Bimestre {b}",
         )
 
         col1, col2 = st.columns([3, 1])

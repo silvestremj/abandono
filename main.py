@@ -17,7 +17,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 from src.analizador_datos import Analizador
-from src.config import config
 from src.entrenador_modelos import EntrenadorModelos
 from src.evaluador_riesgo import EvaluadorRiesgo
 from src.gestor_base_datos import GestorBaseDatos
@@ -59,16 +58,12 @@ def main() -> None:
         log.registrar("INF_4", "Dataset para ML preparado")
 
         # 5. Machine learning
-        forzar_entrenamiento = config.machine_learning.get(
-            "forzar_entrenamiento", False
-        )
-
         # Verificamos si existe al menos el modelo del primer hito para decidir si entrenar
         ruta_modelo_b1 = os.path.join(
             os.path.dirname(__file__), "modelos", "arbol_b1.pkl"
         )
 
-        if forzar_entrenamiento or not os.path.exists(ruta_modelo_b1):
+        if EntrenadorModelos.debe_entrenar(ruta_modelo_b1):
             log.registrar(
                 "INF_ML", "Iniciando fase de entrenamiento por puntos de control..."
             )

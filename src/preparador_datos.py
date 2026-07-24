@@ -21,6 +21,44 @@ import pandas as pd
 
 from src.config import config
 
+# ======================================================================
+# Columnas no predictivas o con fuga de datos ("data leakage") que deben
+# excluirse antes de entrenar/inferir con el modelo. Es la fuente única de
+# verdad: tanto la preparación del dataset de entrenamiento
+# (:meth:`PreparadorDatos.preparar_dataset_ml`) como el preprocesamiento de
+# una fila individual en inferencia
+# (:func:`src.evaluador_riesgo.preprocesar_fila_alumno`) la reutilizan, para
+# evitar que ambas listas se desincronicen con el tiempo.
+# ======================================================================
+COLUMNAS_EXCLUIDAS_ML = [
+    "n_siu",
+    "fecha",
+    "fecha_nacimiento",
+    "estado_actual",
+    "año_estado",
+    "comentario",
+    "target",
+    "fecha_baja",
+    "estado_baja",
+    "causa_baja",
+    "comentario_baja",  # Fuga de datos
+    "fecha_estado",  # Fuga de datos
+    "cohorte",
+    "year",
+    "nota",  # Media global (data leakage para modelos por bimestre)
+    "asist",  # Media global (data leakage para modelos por bimestre)
+    "tf_nota",
+    "tf_asist",
+    "tf_recibido",
+    "cant",  # No accionables
+    "Unnamed: 28",
+    "Unnamed: 29",
+    "Unnamed: 30",
+    "Unnamed: 31",  # Basura del excel
+    "ocupacion",  # No es predictiva y tiene muchos valores únicos (alta cardinalidad)
+    "ciudad",  # Alta cardinalidad
+]
+
 
 class PreparadorDatos:
     """Módulo 2: Integración y Limpieza de datos.
@@ -258,35 +296,9 @@ class PreparadorDatos:
             df_ml["target_ml"] = df_ml["estado_actual"].apply(asignar_target)
 
         # 2. Eliminación de variables no predictivas o que generan "Data Leakage"
-        cols_excluir = [
-            "n_siu",
-            "fecha",
-            "fecha_nacimiento",
-            "estado_actual",
-            "año_estado",
-            "comentario",
-            "target",
-            "fecha_baja",
-            "estado_baja",
-            "causa_baja",
-            "comentario_baja",  # Fuga de datos
-            "fecha_estado",  # Fuga de datos
-            "cohorte",
-            "year",
-            "nota",  # Media global (data leakage para modelos por bimestre)
-            "asist",  # Media global (data leakage para modelos por bimestre)
-            "tf_nota",
-            "tf_asist",
-            "tf_recibido",
-            "cant",  # No accionables
-            "Unnamed: 28",
-            "Unnamed: 29",
-            "Unnamed: 30",
-            "Unnamed: 31",  # Basura del excel
-            "ocupacion",  # No es predictiva y tiene muchos valores únicos (alta cardinalidad)
-            "ciudad",  # Alta cardinalidad
+        cols_excluir_existentes = [
+            c for c in COLUMNAS_EXCLUIDAS_ML if c in df_ml.columns
         ]
-        cols_excluir_existentes = [c for c in cols_excluir if c in df_ml.columns]
         df_ml.drop(columns=cols_excluir_existentes, inplace=True, errors="ignore")
 
         # 3. Identificación de variables categóricas para One-Hot Encoding
