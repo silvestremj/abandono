@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.evaluador_riesgo import EvaluadorRiesgo
+from src.evaluador_riesgo import EvaluadorRiesgo, ETIQUETAS_VARIABLES_CATEGORICAS
 
 
 class TestEvaluadorRiesgo:
@@ -56,3 +56,32 @@ class TestEvaluadorRiesgo:
             # Forzamos el casting a str para que Pylance reconozca el método startswith
             justificacion = str(resultado.loc[0, "justificacion_riesgo"])
             assert justificacion.startswith("[Hito B1]")
+            # 4. La justificación debe ser una frase en lenguaje natural,
+            # no la salida técnica cruda del árbol de decisión (TASK-APP-02)
+            assert " <= " not in justificacion
+            assert " > " not in justificacion
+            assert " AND " not in justificacion
+            assert "porque" in justificacion
+
+    def test_traducir_regla_numerica_asistencia(self):
+        """Una condición sobre asist_bN se traduce a un porcentaje legible, no a la fracción cruda."""
+        frase = self.evaluador._traducir_regla("asist_b2", 0.60, 0.40)
+
+        assert "asistencia en el Bimestre 2" in frase
+        assert "60%" in frase
+        assert "0.60" not in frase
+        assert "<=" not in frase
+
+    def test_traducir_regla_categorica_one_hot(self):
+        """Una condición sobre una columna one-hot verbaliza pertenencia a la categoría, no un umbral numérico."""
+        frase = self.evaluador._traducir_regla("provincia_CORDOBA", 0.5, 1.0)
+
+        assert frase == f"{ETIQUETAS_VARIABLES_CATEGORICAS['provincia']} es 'CORDOBA'"
+        assert "0.5" not in frase
+
+    def test_traducir_regla_desconocida_usa_fallback_y_registra_aviso(self):
+        """Una columna sin traducción conocida no debe romper la ejecución: usa un fallback genérico."""
+        frase = self.evaluador._traducir_regla("columna_inventada_xyz", 3.0, 5.0)
+
+        # No debe lanzar excepción y debe devolver algo utilizable como texto
+        assert isinstance(frase, str) and len(frase) > 0

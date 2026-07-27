@@ -13,6 +13,7 @@ Uso::
 """
 
 import os
+import re
 from typing import Any, Dict, Optional
 
 import joblib
@@ -20,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import config
+from src.gestor_logs import GestorLogs
 from src.preparador_datos import COLUMNAS_EXCLUIDAS_ML
 
 # ======================================================================
@@ -39,6 +41,25 @@ COLS_EXCLUIR = COLUMNAS_EXCLUIDAS_ML + [
     "probabilidad_abandono",
     "justificacion_riesgo",
 ]
+
+# ======================================================================
+# Etiquetas legibles para traducir a lenguaje natural las variables
+# categóricas codificadas con one-hot (``pd.get_dummies`` en
+# :mod:`src.preparador_datos`, columnas ``<variable_base>_<categoria>``).
+#
+# Es una tabla puramente de presentación (cómo se le nombra una variable a
+# un usuario no técnico en la justificación XAI), no una regla de negocio,
+# por lo que se mantiene como constante de código junto a quien la consume
+# — a diferencia de ``reglas_riesgo`` en ``config.yaml``/``ConfigLoader``,
+# que sí parametriza decisiones de negocio (umbrales y palabras clave de
+# clasificación de riesgo).
+# ======================================================================
+ETIQUETAS_VARIABLES_CATEGORICAS: Dict[str, str] = {
+    "pais": "su país de residencia",
+    "provincia": "su provincia de residencia",
+    "max_grado": "su nivel máximo de estudios",
+    "tipo_ocupacion": "su ocupación actual",
+}
 
 
 def preprocesar_fila_alumno(
@@ -101,15 +122,22 @@ class EvaluadorRiesgo:
         columnas_cache: Caché de listas de columnas por bimestre.
     """
 
-    def __init__(self, model_dir: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        model_dir: Optional[str] = None,
+        gestor_logs: Optional[GestorLogs] = None,
+    ) -> None:
         """Inicializa el evaluador cargando reglas y configurando rutas.
 
         Args:
             model_dir: Directorio de modelos. Si es ``None``, se usa
                 ``modelos/`` en la raíz del proyecto.
+            gestor_logs: Instancia de :class:`GestorLogs`. Si es ``None``
+                se crea una por defecto.
         """
         self.reglas: Dict[str, Any] = config.reglas_riesgo
         self.max_bimestre: int = config.machine_learning.get("max_bimestre", 6)
+        self.logger = gestor_logs or GestorLogs()
 
         if model_dir is None:
             # Crea una carpeta 'modelos' en la raíz del proyecto
@@ -163,10 +191,82 @@ class EvaluadorRiesgo:
                     return b
         return 1  # Por defecto, si no hay notas registradas aún, se evalúa con el modelo del Bimestre 1
 
+    def _traducir_regla(
+        self, nombre_caracteristica: str, umbral: float, valor: float
+    ) -> str:
+        """Traduce una única regla técnica del árbol a una cláusula en
+        lenguaje natural.
+
+        Distingue variables numéricas continuas identificables por nombre
+        (``nota_bN``, ``asist_bN``, ``edad``, ``postgrado``) de variables
+        categóricas codificadas con one-hot (``<variable_base>_<categoria>``),
+        ya que unas y otras requieren una redacción distinta para resultar
+        legibles a un usuario no técnico (a una categórica no le aporta nada
+        hablar de "superior a un umbral", que siempre ronda 0.5).
+
+        Args:
+            nombre_caracteristica: Nombre de columna tal como lo conoce el
+                modelo entrenado.
+            umbral: Umbral de la regla en ese nodo del árbol.
+            valor: Valor real del alumno para esa columna.
+
+        Returns:
+            Cláusula en lenguaje natural que describe la condición cumplida.
+            Si la columna no encaja en ninguna traducción conocida, devuelve
+            una frase genérica de respaldo basada en el nombre técnico y
+            registra un aviso vía :class:`GestorLogs` para detectar huecos
+            en el mapeo.
+        """
+        es_menor_igual = valor <= umbral
+
+        match_bimestre = re.match(r"^(nota|asist)_b(\d+)$", nombre_caracteristica)
+        if match_bimestre:
+            tipo, bimestre = match_bimestre.groups()
+            if tipo == "nota":
+                comparador = "igual o inferior a" if es_menor_igual else "superior a"
+                return (
+                    f"su nota media en el Bimestre {bimestre} es {comparador} "
+                    f"{umbral:.1f}"
+                )
+            comparador = "igual o inferior al" if es_menor_igual else "superior al"
+            return (
+                f"su asistencia en el Bimestre {bimestre} es {comparador} "
+                f"{umbral * 100:.0f}%"
+            )
+
+        if nombre_caracteristica == "edad":
+            comparador = "igual o inferior a" if es_menor_igual else "superior a"
+            return f"su edad es {comparador} {umbral:.0f} años"
+
+        if nombre_caracteristica == "postgrado":
+            return (
+                "no posee estudios de posgrado"
+                if es_menor_igual
+                else "posee estudios de posgrado"
+            )
+
+        for variable_base, etiqueta in ETIQUETAS_VARIABLES_CATEGORICAS.items():
+            prefijo = f"{variable_base}_"
+            if nombre_caracteristica.startswith(prefijo):
+                categoria = nombre_caracteristica[len(prefijo):]
+                verbo = "no es" if es_menor_igual else "es"
+                return f"{etiqueta} {verbo} '{categoria}'"
+
+        self.logger.registrar(
+            "EVALUADOR",
+            "No hay traducción legible definida para la variable "
+            f"'{nombre_caracteristica}'; se usa el nombre técnico como último "
+            "recurso en la justificación.",
+            "ERROR",
+        )
+        comparador = "igual o inferior a" if es_menor_igual else "superior a"
+        return f"{nombre_caracteristica} es {comparador} {umbral:.2f}"
+
     def _extraer_justificacion(
         self, df_muestra: pd.DataFrame, modelo: Any, columnas_entrenamiento: list
     ) -> str:
-        """Extrae la justificación XAI recorriendo el camino del árbol de decisión.
+        """Recorre el camino de decisión del árbol y traduce cada regla
+        técnica a lenguaje natural.
 
         Args:
             df_muestra: Fila de datos del alumno (1 registro).
@@ -174,12 +274,13 @@ class EvaluadorRiesgo:
             columnas_entrenamiento: Lista de columnas del modelo.
 
         Returns:
-            cadena de texto con las reglas del camino (``AND`` separadas).
+            Cláusulas del camino de decisión unidas con "y" (sin el nivel de
+            riesgo ni el prefijo de hito, que añade el llamador).
         """
         nodo_indicador = modelo.decision_path(df_muestra)
         nodos_ids = nodo_indicador.indices
 
-        reglas = []
+        condiciones = []
         valores = df_muestra.values
 
         for nodo_id in nodos_ids:
@@ -194,12 +295,11 @@ class EvaluadorRiesgo:
             nombre_caracteristica = columnas_entrenamiento[caracteristica_id]
             valor = valores[0, caracteristica_id]
 
-            if valor <= umbral:
-                reglas.append(f"{nombre_caracteristica} <= {umbral:.2f}")
-            else:
-                reglas.append(f"{nombre_caracteristica} > {umbral:.2f}")
+            condiciones.append(
+                self._traducir_regla(nombre_caracteristica, umbral, valor)
+            )
 
-        return " AND ".join(reglas)
+        return " y ".join(condiciones)
 
     def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:
         """Ejecuta la evaluación de riesgo completa sobre la tabla maestra.
@@ -276,10 +376,14 @@ class EvaluadorRiesgo:
 
             df_riesgo.loc[idx, "nivel_riesgo"] = nivel
 
-            # 4. Explicabilidad Local (XAI) con el árbol correcto
+            # 4. Explicabilidad Local (XAI) con el árbol correcto, traducida
+            # a una frase en lenguaje natural para el usuario no técnico
             if nivel in ["ALTO", "MEDIO"]:
-                justificacion = self._extraer_justificacion(
+                condiciones = self._extraer_justificacion(
                     X_inferencia, modelo_b, columnas_b
+                )
+                justificacion = (
+                    f"El alumno se clasifica en riesgo {nivel} porque {condiciones}."
                 )
                 df_riesgo.loc[idx, "justificacion_riesgo"] = (
                     f"[Hito B{b_alumno}] {justificacion}"

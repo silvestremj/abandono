@@ -67,7 +67,7 @@ Para cada bimestre (1-6):
 - Para cada alumno PRONÓSTICO, detecta su bimestre actual y usa el modelo correspondiente.
 - Calcula probabilidad de abandono (clase 1).
 - Asigna nivel de riesgo: ALTO (≥0.70), MEDIO (≥0.40), BAJO (<0.40).
-- Genera justificación XAI recorriendo el camino del árbol de decisión.
+- Genera justificación XAI recorriendo el camino del árbol de decisión y la traduce a una frase en lenguaje natural.
 
 ### 5. Presentación (`Visualizador`)
 
@@ -93,4 +93,4 @@ El parámetro `class_weight="balanced"` ajusta automáticamente los pesos para c
 
 ### Explicabilidad Local (XAI)
 
-Cada predicción de riesgo ALTO o MEDIO incluye una justificación en texto plano que describe las reglas del árbol de decisión que llevaron a esa predicción, facilitando la interpretación por parte de los usuarios no técnicos.
+Cada predicción de riesgo ALTO o MEDIO incluye una justificación en lenguaje natural (no la salida técnica cruda del árbol) que describe las condiciones que llevaron a esa predicción, facilitando la interpretación por parte de los usuarios no técnicos.

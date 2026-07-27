@@ -23,6 +23,12 @@ df_alto = df_final[df_final["nivel_riesgo"] == "ALTO"]
 print(df_alto[["n_siu", "estudio", "probabilidad_abandono", "justificacion_riesgo"]])
 ```
 
+`justificacion_riesgo` contiene una frase en lenguaje natural (no la salida técnica cruda del árbol), por ejemplo:
+
+```text
+[Hito B2] El alumno se clasifica en riesgo ALTO porque su asistencia en el Bimestre 2 es igual o inferior al 60% y su nota media en el Bimestre 2 es igual o inferior a 4.0.
+```
+
 ---
 
 ## Clasificación de alumnos
