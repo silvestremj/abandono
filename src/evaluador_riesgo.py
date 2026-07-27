@@ -22,7 +22,7 @@ import pandas as pd
 
 from src.config import config
 from src.gestor_logs import GestorLogs
-from src.preparador_datos import COLUMNAS_EXCLUIDAS_ML
+from src.preparador_datos import COLUMNAS_EXCLUIDAS_ML, PreparadorDatos
 
 # ======================================================================
 # Columnas que se excluyen del dataset antes de la inferencia.
@@ -40,6 +40,7 @@ COLS_EXCLUIR = COLUMNAS_EXCLUIDAS_ML + [
     "nivel_riesgo",
     "probabilidad_abandono",
     "justificacion_riesgo",
+    "bimestre_evaluado",
 ]
 
 # ======================================================================
@@ -301,7 +302,9 @@ class EvaluadorRiesgo:
 
         return " y ".join(condiciones)
 
-    def ejecutar_evaluacion(self, df: pd.DataFrame) -> pd.DataFrame:
+    def ejecutar_evaluacion(
+        self, df: pd.DataFrame, bimestre_corte: Optional[int] = None
+    ) -> pd.DataFrame:
         """Ejecuta la evaluación de riesgo completa sobre la tabla maestra.
 
         Clasifica a cada alumno como HISTÓRICO, PRONÓSTICO o SIN REGISTRO.
@@ -310,10 +313,30 @@ class EvaluadorRiesgo:
 
         Args:
             df: Tabla maestra de estudiantes.
+            bimestre_corte: Techo temporal opcional. Si es ``None`` (modo
+                "Automático", por defecto), cada alumno se autodetecta en su
+                propio bimestre real — la "foto de hoy", cada uno en su punto.
+                Si se indica un valor N, ningún alumno se autodetecta más allá
+                del Bimestre N: se recortan las columnas ``nota_bM``/
+                ``asist_bM`` con M > N antes de la autodetección (ver
+                :meth:`src.preparador_datos.PreparadorDatos.filtrar_columnas_por_bimestre`),
+                simulando "qué se sabría si hoy fuera el Bimestre N". Actúa
+                como techo, no como valor forzado: si el bimestre real de un
+                alumno es menor que N (todavía no tiene datos hasta ese hito),
+                se evalúa con su bimestre real en su lugar — forzarlo a N
+                simularía ceros (suspenso falso) en los bimestres que aún no
+                tiene, ya que :mod:`src.preparador_datos` rellena con 0.0 los
+                bimestres sin datos y no hay forma de distinguir "sin datos
+                todavía" de "sacó un cero".
 
         Returns:
             DataFrame con columnas añadidas: ``tipo_prediccion``,
-            ``probabilidad_abandono``, ``nivel_riesgo``, ``justificacion_riesgo``.
+            ``probabilidad_abandono``, ``nivel_riesgo``, ``justificacion_riesgo``
+            (generada para los tres niveles de riesgo — ALTO, MEDIO y BAJO —
+            de todo alumno evaluado; queda en ``"N/A"`` solo para quien no
+            llega a evaluarse), ``bimestre_evaluado`` (bimestre realmente
+            usado para evaluar a cada alumno PRONÓSTICO; entero nulo para los
+            que no se evalúan).
         """
         df_riesgo = df.copy()
 
@@ -337,18 +360,38 @@ class EvaluadorRiesgo:
         df_riesgo["probabilidad_abandono"] = np.nan
         df_riesgo["nivel_riesgo"] = "NO_CALCULABLE"
         df_riesgo["justificacion_riesgo"] = "N/A"
+        # Int64 (nullable) porque solo los alumnos evaluados tienen un valor;
+        # el resto debe quedar en <NA>, no en un 0 que podría confundirse con
+        # un bimestre real.
+        df_riesgo["bimestre_evaluado"] = pd.array(
+            [pd.NA] * len(df_riesgo), dtype="Int64"
+        )
 
         df_evaluar = df_riesgo[mask_evaluables].copy()
 
         if df_evaluar.empty:
             return df_riesgo
 
+        # Si hay un techo temporal fijado, recortamos las columnas de bimestres
+        # futuros SOLO para la autodetección del hito de cada alumno. La
+        # inferencia en sí sigue usando la fila original sin recortar: una vez
+        # detectado el bimestre b_alumno (que ya nunca podrá superar el techo),
+        # preprocesar_fila_alumno alinea contra columnas_b, que nunca incluye
+        # columnas posteriores a b_alumno.
+        if bimestre_corte is not None:
+            df_deteccion = PreparadorDatos.filtrar_columnas_por_bimestre(
+                df_evaluar, bimestre_corte
+            )
+        else:
+            df_deteccion = df_evaluar
+
         # 2. Inferencia individualizada por hito temporal
         for idx in df_evaluar.index:
             fila_original = df_evaluar.loc[idx]
 
             # Detectar en qué hito temporal (bimestre) se encuentra este alumno concreto
-            b_alumno = self._detectar_bimestre_alumno(fila_original)
+            # (recortado al techo bimestre_corte si se indicó uno)
+            b_alumno = self._detectar_bimestre_alumno(df_deteccion.loc[idx])
 
             # Recuperar el modelo adaptado a su realidad temporal
             modelo_b, columnas_b = self._obtener_modelo_bimestre(b_alumno)
@@ -365,6 +408,7 @@ class EvaluadorRiesgo:
             # Calcular probabilidad (Clase 1 = Abandono)
             prob = float(modelo_b.predict_proba(X_inferencia)[0, 1])
             df_riesgo.loc[idx, "probabilidad_abandono"] = prob
+            df_riesgo.loc[idx, "bimestre_evaluado"] = b_alumno
 
             # Aplicar reglas de negocio para los umbrales
             if prob >= 0.70:
@@ -377,16 +421,21 @@ class EvaluadorRiesgo:
             df_riesgo.loc[idx, "nivel_riesgo"] = nivel
 
             # 4. Explicabilidad Local (XAI) con el árbol correcto, traducida
-            # a una frase en lenguaje natural para el usuario no técnico
-            if nivel in ["ALTO", "MEDIO"]:
-                condiciones = self._extraer_justificacion(
-                    X_inferencia, modelo_b, columnas_b
-                )
-                justificacion = (
-                    f"El alumno se clasifica en riesgo {nivel} porque {condiciones}."
-                )
-                df_riesgo.loc[idx, "justificacion_riesgo"] = (
-                    f"[Hito B{b_alumno}] {justificacion}"
-                )
+            # a una frase en lenguaje natural para el usuario no técnico.
+            # Se genera para los tres niveles (también BAJO): la ruta de
+            # decisión ya se resalta en el árbol para BAJO igual que para
+            # ALTO/MEDIO (TASK-APP-03), así que dejar "N/A" ahí es una
+            # inconsistencia — el alumno también "se clasifica en riesgo BAJO
+            # porque..." tiene una explicación igual de genuina y accionable
+            # (confirma que el low-risk no es un valor por defecto sin más).
+            condiciones = self._extraer_justificacion(
+                X_inferencia, modelo_b, columnas_b
+            )
+            justificacion = (
+                f"El alumno se clasifica en riesgo {nivel} porque {condiciones}."
+            )
+            df_riesgo.loc[idx, "justificacion_riesgo"] = (
+                f"[Hito B{b_alumno}] {justificacion}"
+            )
 
         return df_riesgo

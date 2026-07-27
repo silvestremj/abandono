@@ -50,18 +50,54 @@ class TestEvaluadorRiesgo:
         # 2. La probabilidad matemática debe haberse calculado
         assert pd.notna(resultado.loc[0, "probabilidad_abandono"])
 
-        # 3. Si el riesgo requiere justificación, debe llevar la etiqueta del hito detectado [Hito B1]
-        nivel = resultado.loc[0, "nivel_riesgo"]
-        if nivel in ["ALTO", "MEDIO"]:
-            # Forzamos el casting a str para que Pylance reconozca el método startswith
-            justificacion = str(resultado.loc[0, "justificacion_riesgo"])
-            assert justificacion.startswith("[Hito B1]")
-            # 4. La justificación debe ser una frase en lenguaje natural,
-            # no la salida técnica cruda del árbol de decisión (TASK-APP-02)
-            assert " <= " not in justificacion
-            assert " > " not in justificacion
-            assert " AND " not in justificacion
-            assert "porque" in justificacion
+        # 3. Todo alumno evaluado lleva justificación con la etiqueta del hito
+        # detectado [Hito B1] -- también si su nivel es BAJO (ver
+        # test_justificacion_se_genera_tambien_para_riesgo_bajo).
+        # Forzamos el casting a str para que Pylance reconozca el método startswith
+        justificacion = str(resultado.loc[0, "justificacion_riesgo"])
+        assert justificacion.startswith("[Hito B1]")
+        # 4. La justificación debe ser una frase en lenguaje natural,
+        # no la salida técnica cruda del árbol de decisión (TASK-APP-02)
+        assert " <= " not in justificacion
+        assert " > " not in justificacion
+        assert " AND " not in justificacion
+        assert "porque" in justificacion
+
+    def test_justificacion_se_genera_tambien_para_riesgo_bajo(self):
+        """Un alumno de riesgo BAJO también recibe justificación en lenguaje
+        natural: dejar "N/A" ahí era una inconsistencia (el árbol ya resalta
+        su ruta coloreada igual que para ALTO/MEDIO, TASK-APP-03)."""
+        df_test = pd.DataFrame(
+            [
+                {
+                    "estado_actual": "En curso",
+                    "nota_b1": 9.5,
+                    "asist_b1": 0.95,
+                    "nota_b2": 0.0,
+                    "asist_b2": 0.0,
+                    "nota_b3": 0.0,
+                    "asist_b3": 0.0,
+                }
+            ]
+        )
+
+        resultado = self.evaluador.ejecutar_evaluacion(df_test)
+
+        assert resultado.loc[0, "nivel_riesgo"] == "BAJO"
+        justificacion = str(resultado.loc[0, "justificacion_riesgo"])
+        assert justificacion != "N/A"
+        assert "riesgo BAJO" in justificacion
+        assert "porque" in justificacion
+
+    def test_historico_no_evaluado_mantiene_na_en_justificacion(self):
+        """Un alumno HISTÓRICO (no evaluado) sí debe mantener "N/A": no hay
+        ninguna ruta de decisión que justificar porque nunca se ejecuta el
+        modelo para él."""
+        df_test = pd.DataFrame([{"estado_actual": "Recibido", "nota_b1": 8.0, "asist_b1": 0.90}])
+
+        resultado = self.evaluador.ejecutar_evaluacion(df_test)
+
+        assert resultado.loc[0, "justificacion_riesgo"] == "N/A"
 
     def test_traducir_regla_numerica_asistencia(self):
         """Una condición sobre asist_bN se traduce a un porcentaje legible, no a la fracción cruda."""
@@ -85,3 +121,44 @@ class TestEvaluadorRiesgo:
 
         # No debe lanzar excepción y debe devolver algo utilizable como texto
         assert isinstance(frase, str) and len(frase) > 0
+
+    def test_bimestre_corte_actua_como_techo_no_como_valor_forzado(self):
+        """TASK-APP-03: bimestre_corte debe recortar el futuro visible a la
+        autodetección sin fingir datos que el alumno todavía no tiene."""
+        df_test = pd.DataFrame(
+            [
+                {
+                    # Alumno con datos reales hasta B4, pero se fija corte en B2:
+                    # debe evaluarse con el modelo/columnas de B2, ignorando B3/B4.
+                    "estado_actual": "En curso",
+                    "nota_b1": 8.0,
+                    "asist_b1": 0.90,
+                    "nota_b2": 7.0,
+                    "asist_b2": 0.85,
+                    "nota_b3": 6.0,
+                    "asist_b3": 0.70,
+                    "nota_b4": 5.0,
+                    "asist_b4": 0.60,
+                },
+                {
+                    # Alumno con datos reales solo hasta B1, pero se fija corte
+                    # en B4: no hay que forzarle ceros en B2-B4 (simularía un
+                    # suspenso falso), debe evaluarse en su bimestre real (B1).
+                    "estado_actual": "En curso",
+                    "nota_b1": 3.0,
+                    "asist_b1": 0.40,
+                    "nota_b2": 0.0,
+                    "asist_b2": 0.0,
+                    "nota_b3": 0.0,
+                    "asist_b3": 0.0,
+                    "nota_b4": 0.0,
+                    "asist_b4": 0.0,
+                },
+            ]
+        )
+
+        resultado = self.evaluador.ejecutar_evaluacion(df_test, bimestre_corte=2)
+        assert resultado.loc[0, "bimestre_evaluado"] == 2
+
+        resultado_b4 = self.evaluador.ejecutar_evaluacion(df_test, bimestre_corte=4)
+        assert resultado_b4.loc[1, "bimestre_evaluado"] == 1

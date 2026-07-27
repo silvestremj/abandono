@@ -95,3 +95,79 @@ class TestPreparadorDatos:
         # 3. VERIFICACIÓN DE INTEGRIDAD DE FILAS
         # El filtro debe reducir columnas, pero nunca alterar la cantidad de registros
         assert len(df_resultado) == 1
+
+    def test_deduplicacion_prioriza_fila_con_datos_reales(self):
+        """Si la fila duplicada más reciente de un alumno está en blanco pero
+        una fila ANTERIOR tenía su desenlace real, la deduplicación no debe
+        descartar el dato real. Antes se aplicaba "prevalece el último
+        registro" a secas; se detectó empíricamente en los datos de origen
+        que ~13% de los grupos duplicados pierden así un Abandono/Recibido
+        real en favor de una fila vacía posterior del mismo alumno."""
+        df_actual_test = pd.DataFrame(
+            [
+                {
+                    "n_siu": "1001",
+                    "estudio": "CESE",
+                    "nota": "7,5",
+                    "estado_actual": "Abandono",
+                },
+                {
+                    # Fila en blanco posterior del MISMO alumno/estudio: no
+                    # debe "ganar" solo por venir después.
+                    "n_siu": "1001",
+                    "estudio": "CESE",
+                    "nota": None,
+                    "estado_actual": None,
+                },
+            ]
+        )
+        df_notas_test = pd.DataFrame(
+            [
+                {
+                    # Alumno distinto, solo para que el pivot tenga con qué trabajar.
+                    "n_siu": "9999",
+                    "Estudio": "CESE",
+                    "nota_m": 5.0,
+                    "asist_m": 0.5,
+                    "Comentario": "Bimestre: 1.0",
+                }
+            ]
+        )
+
+        preparador = PreparadorDatos(
+            {"actual": df_actual_test, "notas_bimestre": df_notas_test}
+        )
+        resultado = preparador.ejecutar_preparacion()
+
+        assert len(resultado) == 1
+        assert resultado.loc[0, "estado_actual"] == "Abandono"
+
+    def test_deduplicacion_sin_datos_reales_conserva_comportamiento_anterior(self):
+        """Si NINGUNA fila del grupo duplicado tiene datos reales, se sigue
+        aplicando el criterio anterior de quedarse con la última (no hay
+        ninguna candidata "informativa" que priorizar)."""
+        df_actual_test = pd.DataFrame(
+            [
+                {"n_siu": "1002", "estudio": "CESE", "nota": None, "estado_actual": None},
+                {"n_siu": "1002", "estudio": "CESE", "nota": None, "estado_actual": None},
+            ]
+        )
+        df_notas_test = pd.DataFrame(
+            [
+                {
+                    "n_siu": "9999",
+                    "Estudio": "CESE",
+                    "nota_m": 5.0,
+                    "asist_m": 0.5,
+                    "Comentario": "Bimestre: 1.0",
+                }
+            ]
+        )
+
+        preparador = PreparadorDatos(
+            {"actual": df_actual_test, "notas_bimestre": df_notas_test}
+        )
+        resultado = preparador.ejecutar_preparacion()
+
+        assert len(resultado) == 1
+        assert resultado.loc[0, "estado_actual"] == "SIN REGISTRO"

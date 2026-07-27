@@ -18,6 +18,7 @@ Uso en Streamlit::
     python -m src.visualizador
 """
 
+import io
 import os
 import sys
 from datetime import datetime
@@ -54,6 +55,11 @@ if "total_etiquetados" not in st.session_state:
     st.session_state.total_etiquetados = 0
 if "pipeline_ok" not in st.session_state:
     st.session_state.pipeline_ok = False
+if "bimestre_corte_activo" not in st.session_state:
+    # Bimestre de corte usado en la última ejecución del pipeline (None = modo
+    # Automático). Es la fuente de verdad que consultan el resto de pestañas
+    # para saber si están mirando una simulación con techo fijo o no.
+    st.session_state.bimestre_corte_activo = None
 
 
 class Visualizador:
@@ -437,8 +443,13 @@ class Visualizador:
     # ======================================================================
     # Pipeline completo
     # ======================================================================
-    def _ejecutar_pipeline(self) -> pd.DataFrame:
+    def _ejecutar_pipeline(self, bimestre_corte: Optional[int] = None) -> pd.DataFrame:
         """Ejecuta el pipeline completo de datos para la interfaz web.
+
+        Args:
+            bimestre_corte: Techo temporal a pasar a
+                :meth:`EvaluadorRiesgo.ejecutar_evaluacion`. ``None`` (modo
+                Automático) evalúa a cada alumno en su propio bimestre real.
 
         Returns:
             DataFrame con los resultados de evaluación de riesgo.
@@ -469,7 +480,7 @@ class Visualizador:
             log.registrar("VIZ", "Modelos entrenados")
 
         evaluador = EvaluadorRiesgo()
-        df_riesgo = evaluador.ejecutar_evaluacion(df_master)
+        df_riesgo = evaluador.ejecutar_evaluacion(df_master, bimestre_corte=bimestre_corte)
         log.registrar("VIZ", "Evaluación completada")
 
         # Si no se reentrenó, cargar métricas guardadas en disco
@@ -520,7 +531,38 @@ class Visualizador:
                 st.write(f"- {f.name} ({f.size / 1024:.1f} KB)")
 
         st.markdown("---")
-        st.header("2. Ejecutar cálculos")
+        st.header("2. Modo de evaluación")
+
+        max_bimestre = self.config.machine_learning.get("max_bimestre", 6)
+
+        modo_evaluacion = st.radio(
+            "¿Cómo se debe evaluar a cada alumno?",
+            options=[
+                "Automático (recomendado)",
+                "Fijar bimestre de corte (simulación)",
+            ],
+            help=(
+                "Automático: cada alumno se evalúa en su propio bimestre real "
+                "(el último con notas registradas) — es la 'foto de hoy', "
+                "cada alumno en su propio punto. Fijar bimestre de corte: "
+                "simula la evaluación como si hoy fuera un bimestre concreto, "
+                "ignorando datos posteriores a ese hito para todos los "
+                "alumnos (un alumno sin datos reales hasta ese hito se sigue "
+                "evaluando en su bimestre real, para no simular un suspenso "
+                "falso)."
+            ),
+        )
+
+        bimestre_corte_seleccionado = None
+        if modo_evaluacion == "Fijar bimestre de corte (simulación)":
+            bimestre_corte_seleccionado = st.selectbox(
+                "Bimestre de corte",
+                range(1, max_bimestre + 1),
+                format_func=lambda b: f"Bimestre {b}",
+            )
+
+        st.markdown("---")
+        st.header("3. Ejecutar cálculos")
 
         if st.button("Ejecutar cálculos", type="primary"):
             base_dir = os.path.dirname(os.path.dirname(__file__))
@@ -538,9 +580,12 @@ class Visualizador:
 
             with st.spinner("Procesando pipeline de datos..."):
                 try:
-                    df_riesgo = self._ejecutar_pipeline()
+                    df_riesgo = self._ejecutar_pipeline(
+                        bimestre_corte=bimestre_corte_seleccionado
+                    )
                     st.session_state.df_riesgo = df_riesgo
                     st.session_state.pipeline_ok = True
+                    st.session_state.bimestre_corte_activo = bimestre_corte_seleccionado
                     st.success("Pipeline completado con éxito.")
                 except Exception as e:
                     st.error(f"Error en el pipeline: {e}")
@@ -654,6 +699,25 @@ class Visualizador:
                         "rendimiento académico actual."
                     )
 
+                # Modo "Fijar bimestre de corte": avisar si algún alumno no
+                # tenía aún datos reales hasta el corte elegido y por tanto
+                # se evaluó con su bimestre real (inferior al corte).
+                bimestre_corte_activo = st.session_state.get("bimestre_corte_activo")
+                if bimestre_corte_activo is not None and "bimestre_evaluado" in df.columns:
+                    mask_desajuste = (
+                        df_pronostico["bimestre_evaluado"] < bimestre_corte_activo
+                    )
+                    n_desajuste = int(mask_desajuste.fillna(False).sum())
+                    if n_desajuste > 0:
+                        st.warning(
+                            f"Modo simulación (corte fijado en Bimestre "
+                            f"{bimestre_corte_activo}): {n_desajuste} alumno(s) "
+                            "todavía no tenían datos reales hasta ese hito y se "
+                            "evaluaron con su bimestre real (inferior al corte), "
+                            "para evitar simular un suspenso falso. Revisa la "
+                            "columna 'bimestre_evaluado' en el listado."
+                        )
+
         # ======================================================================
         # Listado completo de alumnos
         # ======================================================================
@@ -665,6 +729,7 @@ class Visualizador:
             "tipo_prediccion",
             "nivel_riesgo",
             "probabilidad_abandono",
+            "bimestre_evaluado",
             "justificacion_riesgo",
         ]
         cols_mostrar = [c for c in cols_clave if c in df.columns]
@@ -705,9 +770,11 @@ class Visualizador:
         st.header("Árbol de decisión por bimestre")
         st.write(
             "Cada bimestre tiene su propio árbol entrenado con los datos "
-            "disponibles hasta ese hito temporal. Selecciona un bimestre "
-            "y, opcionalmente, un alumno para visualizar la ruta de decisión "
-            "que el modelo ha seguido para asignarle su nivel de riesgo."
+            "disponibles hasta ese hito temporal. El árbol se actualiza al "
+            "instante según el bimestre y el alumno elegidos: solo se "
+            "muestra **un** árbol en pantalla, y su color y la información "
+            "que lo acompaña corresponden siempre a lo que se está viendo "
+            "— nunca a un bimestre distinto."
         )
 
         max_bimestre = self.config.machine_learning.get("max_bimestre", 6)
@@ -730,8 +797,9 @@ class Visualizador:
                 df_riesgo["nivel_riesgo"].astype(str).str.strip()
             )
         alumno_seleccionado = None
-        fila_alumno_preprocesada = None
-        nivel_riesgo_alumno = None
+        fila_bruta = None
+        bimestre_evaluado_alumno = None
+        riesgo_oficial = None
 
         if df_riesgo is not None and not df_riesgo.empty:
             alumnos_pronostico = df_riesgo[
@@ -763,76 +831,130 @@ class Visualizador:
                         # Usar la misma lógica que el filtro para obtener el riesgo
                         riesgo_raw = fila_bruta.iloc[0]["nivel_riesgo"]
                         riesgo_str = str(riesgo_raw).strip().upper() if pd.notna(riesgo_raw) else ""
-                        nivel_riesgo_alumno = riesgo_str if riesgo_str in ("ALTO", "MEDIO", "BAJO") else None
-                        base_dir = os.path.dirname(os.path.dirname(__file__))
+                        riesgo_oficial = riesgo_str if riesgo_str in ("ALTO", "MEDIO", "BAJO") else None
 
-                        # Usar el bimestre DEL DROPDOWN (elección del usuario)
-                        # Preprocesar los datos del alumno para ESE bimestre
-                        ruta_col = os.path.join(
-                            base_dir, "modelos", f"columnas_b{bimestre}.pkl"
+                        bimestre_raw = fila_bruta.iloc[0].get("bimestre_evaluado")
+                        bimestre_evaluado_alumno = (
+                            int(bimestre_raw) if pd.notna(bimestre_raw) else None
                         )
-                        if os.path.exists(ruta_col):
-                            cols_b = joblib.load(ruta_col)
-                            fila_alumno_preprocesada = preprocesar_fila_alumno(
-                                fila_bruta.iloc[0], cols_b
-                            )
-                        else:
-                            st.warning(
-                                f"No existe el modelo para el Bimestre {bimestre}. "
-                                "No se puede resaltar la ruta de decisión."
-                            )
 
-        if st.button("Generar gráfico del árbol", type="primary"):
-            base_dir = os.path.dirname(os.path.dirname(__file__))
-            assets_dir = os.path.join(base_dir, "assets")
+        # ======================================================================
+        # TASK-APP-03 (corrección de coherencia): se renderiza SIEMPRE un único
+        # árbol, en vivo (sin botón), para que el mensaje mostrado y el árbol
+        # en pantalla nunca puedan desincronizarse. Antes existían dos árboles
+        # (uno "oficial" automático y otro exploratorio tras pulsar un botón)
+        # que podían quedar visualmente contradictorios entre sí; ahora solo
+        # hay un punto de renderizado. El panel de justificación/métricas solo
+        # se muestra cuando ESE árbol es, además, la evaluación oficial del
+        # alumno (mismo bimestre), para no describir un hito que no es el que
+        # se ve en pantalla.
+        # ======================================================================
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        fila_alumno_preprocesada = None
+        nivel_riesgo_color = None
+        es_vista_oficial = False
 
-            if alumno_seleccionado:
-                nombre_archivo = f"arbol_{alumno_seleccionado}_b{bimestre}.png"
-            else:
-                nombre_archivo = f"arbol_b{bimestre}.png"
-            ruta_png = os.path.join(assets_dir, nombre_archivo)
-
-            ruta_extraida = fila_alumno_preprocesada is not None
-
-            with st.spinner("Generando árbol de decisión..."):
-                fig = self.graficar_arbol(
-                    bimestre=bimestre,
-                    max_depth=max_depth,
-                    fila_alumno=fila_alumno_preprocesada,
-                    nivel_riesgo=nivel_riesgo_alumno,
-                    alumno_id=alumno_seleccionado if ruta_extraida else None,
-                    guardar_ruta=ruta_png,
+        if alumno_seleccionado and fila_bruta is not None and not fila_bruta.empty:
+            ruta_col = os.path.join(base_dir, "modelos", f"columnas_b{bimestre}.pkl")
+            if os.path.exists(ruta_col):
+                cols_b = joblib.load(ruta_col)
+                fila_alumno_preprocesada = preprocesar_fila_alumno(
+                    fila_bruta.iloc[0], cols_b
                 )
-
-            if fig is not None:
-                st.pyplot(fig)
-                plt.close(fig)
-
-                if ruta_extraida and df_riesgo is not None:
-                    # Obtener el riesgo real del dataframe filtrado
-                    fila_info = df_riesgo[
-                        (df_riesgo["n_siu"].astype(str) == str(alumno_seleccionado))
-                        & (df_riesgo.get("tipo_prediccion", "") == "PRONÓSTICO")
-                    ]
-                    if not fila_info.empty:
-                        riesgo_real = str(fila_info.iloc[0]["nivel_riesgo"]).strip().upper()
-                    else:
-                        riesgo_real = "NO_CALCULABLE"
-                    st.success(
-                        f"Ruta resaltada para alumno {alumno_seleccionado} "
-                        f"(riesgo {riesgo_real}). "
-                        f"Gráfico guardado en assets/{nombre_archivo}"
+                if bimestre_evaluado_alumno is not None and bimestre != bimestre_evaluado_alumno:
+                    st.warning(
+                        f"Estás viendo el Bimestre {bimestre} (vista "
+                        "exploratoria, ruta sin colorear); este alumno fue "
+                        f"evaluado oficialmente en el Bimestre "
+                        f"{bimestre_evaluado_alumno}. Cambia el selector de "
+                        "arriba a ese bimestre para ver su ruta de riesgo "
+                        "real junto con su justificación y métricas."
                     )
                 else:
-                    st.success(f"Gráfico guardado en assets/{nombre_archivo}")
+                    nivel_riesgo_color = riesgo_oficial
+                    es_vista_oficial = bimestre_evaluado_alumno is not None
+            else:
+                st.warning(
+                    f"No existe el modelo para el Bimestre {bimestre}. "
+                    "No se puede resaltar la ruta de decisión."
+                )
 
-                with open(ruta_png, "rb") as f:
-                    st.download_button(
-                        "Descargar imagen PNG",
-                        f,
-                        nombre_archivo,
-                        "image/png",
+        alumno_id_titulo = (
+            alumno_seleccionado if fila_alumno_preprocesada is not None else None
+        )
+
+        with st.spinner("Generando árbol de decisión..."):
+            fig = self.graficar_arbol(
+                bimestre=bimestre,
+                max_depth=max_depth,
+                fila_alumno=fila_alumno_preprocesada,
+                nivel_riesgo=nivel_riesgo_color,
+                alumno_id=alumno_id_titulo,
+            )
+
+        if fig is None:
+            return
+
+        st.pyplot(fig)
+
+        # Panel de justificación + bimestre + métricas: solo si el árbol que
+        # se acaba de mostrar ES la evaluación oficial del alumno.
+        if es_vista_oficial and fila_bruta is not None:
+            fila_oficial = fila_bruta.iloc[0]
+            justificacion = fila_oficial.get("justificacion_riesgo", "N/A")
+            st.markdown(f"**Justificación:** {justificacion}")
+
+            bimestre_corte_activo = st.session_state.get("bimestre_corte_activo")
+            if bimestre_corte_activo is not None:
+                if bimestre_evaluado_alumno == bimestre_corte_activo:
+                    st.caption(
+                        f"Bimestre evaluado: **{bimestre_evaluado_alumno}** "
+                        "(coincide con el corte de simulación fijado)."
                     )
+                else:
+                    st.caption(
+                        f"Bimestre evaluado: **{bimestre_evaluado_alumno}** — el "
+                        f"corte de simulación fijado era el Bimestre "
+                        f"{bimestre_corte_activo}; este alumno todavía no tenía "
+                        "datos reales hasta ese hito."
+                    )
+            else:
+                st.caption(
+                    f"Bimestre evaluado: **{bimestre_evaluado_alumno}** "
+                    "(modo automático)."
+                )
+
+            df_metricas = st.session_state.get("df_metricas")
+            if df_metricas is not None and not df_metricas.empty:
+                hito_label = f"Bimestre {bimestre_evaluado_alumno}"
+                fila_metricas = df_metricas[df_metricas["Hito"] == hito_label]
+                if not fila_metricas.empty:
+                    fm = fila_metricas.iloc[0]
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Accuracy", f"{fm['Accuracy']:.2f}")
+                    c2.metric("Recall (Abandono)", f"{fm['Recall (Abandono)']:.2f}")
+                    c3.metric("Variable clave", str(fm.get("Variable Clave", "—")))
+
+        # Descarga: un único clic entrega el PNG al navegador (carpeta de
+        # descargas del usuario), sin escribir nada en el servidor — reutiliza
+        # la MISMA figura que está en pantalla, nunca regenera un árbol
+        # distinto para el archivo descargado.
+        nombre_archivo = (
+            f"arbol_{alumno_seleccionado}_b{bimestre}.png"
+            if alumno_seleccionado
+            else f"arbol_b{bimestre}.png"
+        )
+        buffer_png = io.BytesIO()
+        fig.savefig(buffer_png, format="png", dpi=150, bbox_inches="tight")
+        buffer_png.seek(0)
+        st.download_button(
+            "Descargar imagen PNG",
+            data=buffer_png,
+            file_name=nombre_archivo,
+            mime="image/png",
+        )
+
+        plt.close(fig)
 
 
 if __name__ == "__main__":

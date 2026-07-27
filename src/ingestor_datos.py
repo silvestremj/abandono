@@ -44,6 +44,19 @@ class IngestorDatos:
             self.ruta = ruta_data
         self.datasets: Dict[str, pd.DataFrame] = {}
 
+    @staticmethod
+    def _tiene_bom_utf8(path: str) -> bool:
+        """Comprueba si un fichero empieza por el BOM de UTF-8 (``EF BB BF``).
+
+        Args:
+            path: Ruta al fichero a inspeccionar.
+
+        Returns:
+            ``True`` si los 3 primeros bytes son el BOM UTF-8.
+        """
+        with open(path, "rb") as fh:
+            return fh.read(3) == b"\xef\xbb\xbf"
+
     def leer_datos(self) -> Dict[str, pd.DataFrame]:
         """Lee todos los archivos definidos en ``config.datasets``.
 
@@ -61,6 +74,16 @@ class IngestorDatos:
                     encoding = conf.get("encoding", "utf-8")
                     # utf-8-sig elimina el BOM al inicio de archivos provenientes de Excel
                     if encoding == "utf-8":
+                        encoding = "utf-8-sig"
+                    elif self._tiene_bom_utf8(path):
+                        # El encoding declarado en config.yaml (p.ej. "latin1")
+                        # puede no coincidir con el real: un CSV con BOM UTF-8
+                        # leído como latin1 decodifica esos 3 bytes como
+                        # caracteres sueltos que se prepend al primer nombre
+                        # de columna (p.ej. "n_siu" -> "ï»¿n_siu"), rompiendo
+                        # cualquier normalización/cruce posterior sobre esa
+                        # columna. El BOM es una prueba inequívoca de que el
+                        # fichero es UTF-8 pese a lo declarado.
                         encoding = "utf-8-sig"
                     self.datasets[clave] = pd.read_csv(
                         path, sep=conf["sep"], encoding=encoding

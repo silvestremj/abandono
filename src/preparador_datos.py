@@ -117,7 +117,34 @@ class PreparadorDatos:
 
         # PREPROCESAMIENTO: Tarea 3: Deduplicación
         # --------------------------------------------------------------
-        # Elimina alumnado duplicado en el mismo estudio. Prevalece el último registro (asumiendo que es el más actualizado).
+        # Elimina alumnado duplicado en el mismo estudio. Prevalece el
+        # registro más informativo (con estado_actual y/o nota reales) y,
+        # entre varios igualmente informativos, el último (asumiendo que es
+        # el más actualizado).
+        #
+        # Antes se aplicaba "último registro" a secas, lo cual descarta
+        # silenciosamente un desenlace real (p.ej. "Abandono"/"Recibido" con
+        # su nota) cuando el fichero de origen trae, para el mismo alumno, una
+        # fila en blanco POSTERIOR a la fila con los datos reales — se ha
+        # detectado empíricamente en los datos de origen (~13% de los grupos
+        # duplicados). Se ordena primero por "informatividad" (estable, así
+        # que entre filas igual de informativas se conserva el orden
+        # original) para que drop_duplicates(keep="last") nunca prefiera una
+        # fila vacía sobre una con datos reales.
+        if "nota" in df_base.columns:
+            nota_dedup = pd.to_numeric(
+                df_base["nota"].astype(str).str.replace(",", "."), errors="coerce"
+            )
+            tiene_dato = df_base["estado_actual"].notna() | nota_dedup.notna()
+        else:
+            tiene_dato = df_base["estado_actual"].notna()
+
+        df_base = (
+            df_base.assign(_tiene_dato=tiene_dato)
+            .sort_values("_tiene_dato", kind="stable")
+            .drop(columns="_tiene_dato")
+        )
+
         filas_antes = len(df_base)
         df_base = df_base.drop_duplicates(subset=["n_siu", "estudio"], keep="last")
         filas_despues = len(df_base)
@@ -313,12 +340,20 @@ class PreparadorDatos:
 
         return df_ml
 
+    @staticmethod
     def filtrar_columnas_por_bimestre(
-        self, df: pd.DataFrame, bimestre_corte: int
+        df: pd.DataFrame, bimestre_corte: int
     ) -> pd.DataFrame:
         """
         Elimina dinámicamente del DataFrame las columnas de notas y asistencias
         que pertenecen a bimestres posteriores al hito temporal de corte.
+
+        Es un método estático (no depende de ``self.datasets``) para poder
+        reutilizarlo también fuera del entrenamiento — por ejemplo desde
+        :meth:`src.evaluador_riesgo.EvaluadorRiesgo.ejecutar_evaluacion` para
+        recortar el techo temporal visible al autodetectar el bimestre de un
+        alumno — sin necesidad de instanciar :class:`PreparadorDatos` con un
+        ``datasets_dict`` que no pintaría nada aquí.
 
         Args:
             df (pd.DataFrame): Dataset original con todas las variables temporales.
