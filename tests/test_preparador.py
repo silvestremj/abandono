@@ -142,6 +142,40 @@ class TestPreparadorDatos:
         assert len(resultado) == 1
         assert resultado.loc[0, "estado_actual"] == "Abandono"
 
+    def test_columnas_unnamed_y_sd_no_sobreviven_a_preparar_dataset_ml(self):
+        """Bug: COLUMNAS_EXCLUIDAS_ML listaba "Unnamed: N" con mayúscula
+        inicial, pero ejecutar_preparacion normaliza las columnas del Excel
+        a minúsculas antes — la comparación (case-sensitive) nunca
+        coincidía y una columna "Unnamed: 30" con texto suelto de Excel
+        colaba como feature real tras el One-Hot Encoding. Además,
+        sd_nota/sd_asist (desviación típica de la media global) son la
+        misma fuga de datos que nota/asist y tampoco estaban excluidas."""
+        df_maestro_test = pd.DataFrame(
+            [
+                {
+                    "estado_actual": "Recibido",
+                    "nota_b1": 8.0,
+                    "asist_b1": 0.85,
+                    "Unnamed: 28": "Formulario de baja",
+                    "unnamed: 29": "Identificación curso/estudiante",
+                    "sd_nota": 1.2,
+                    "sd_asist": 0.1,
+                }
+            ]
+        )
+
+        df_ml = self.preparador.preparar_dataset_ml(df_maestro_test)
+
+        # Ninguna columna resultante (ni siquiera tras el One-Hot Encoding,
+        # que generaría "Unnamed: 28_Formulario de baja") debe rastrear
+        # las columnas "Unnamed" del Excel de origen.
+        assert not any("unnamed" in str(c).lower() for c in df_ml.columns)
+        assert "sd_nota" not in df_ml.columns
+        assert "sd_asist" not in df_ml.columns
+        # Y sigue conservando las columnas predictivas legítimas.
+        assert "nota_b1" in df_ml.columns
+        assert "asist_b1" in df_ml.columns
+
     def test_deduplicacion_sin_datos_reales_conserva_comportamiento_anterior(self):
         """Si NINGUNA fila del grupo duplicado tiene datos reales, se sigue
         aplicando el criterio anterior de quedarse con la última (no hay

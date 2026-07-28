@@ -47,6 +47,8 @@ COLUMNAS_EXCLUIDAS_ML = [
     "year",
     "nota",  # Media global (data leakage para modelos por bimestre)
     "asist",  # Media global (data leakage para modelos por bimestre)
+    "sd_nota",  # Desviación típica de "nota": misma fuga que "nota"
+    "sd_asist",  # Desviación típica de "asist": misma fuga que "asist"
     "tf_nota",
     "tf_asist",
     "tf_recibido",
@@ -58,6 +60,29 @@ COLUMNAS_EXCLUIDAS_ML = [
     "ocupacion",  # No es predictiva y tiene muchos valores únicos (alta cardinalidad)
     "ciudad",  # Alta cardinalidad
 ]
+
+
+def excluir_columnas_ml(df: pd.DataFrame, columnas_excluir: list) -> pd.DataFrame:
+    """Elimina de ``df`` las columnas listadas en ``columnas_excluir``,
+    comparando nombres sin distinguir mayúsculas/minúsculas.
+
+    ``ejecutar_preparacion`` normaliza los nombres de columna del Excel de
+    origen a minúsculas, pero ``COLUMNAS_EXCLUIDAS_ML`` puede contener
+    entradas con otra capitalización (p.ej. columnas ``Unnamed: N`` que
+    Excel siempre genera con mayúscula inicial). Comparar de forma
+    case-insensitive evita que ese desajuste vuelva a colar una columna de
+    fuga de datos sin que ninguna prueba lo detecte.
+
+    Args:
+        df: DataFrame del que eliminar columnas.
+        columnas_excluir: Lista de nombres de columna a excluir.
+
+    Returns:
+        Copia de ``df`` sin las columnas indicadas.
+    """
+    excluir_lower = {c.lower() for c in columnas_excluir}
+    cols_a_eliminar = [c for c in df.columns if str(c).lower() in excluir_lower]
+    return df.drop(columns=cols_a_eliminar, errors="ignore")
 
 
 class PreparadorDatos:
@@ -323,10 +348,7 @@ class PreparadorDatos:
             df_ml["target_ml"] = df_ml["estado_actual"].apply(asignar_target)
 
         # 2. Eliminación de variables no predictivas o que generan "Data Leakage"
-        cols_excluir_existentes = [
-            c for c in COLUMNAS_EXCLUIDAS_ML if c in df_ml.columns
-        ]
-        df_ml.drop(columns=cols_excluir_existentes, inplace=True, errors="ignore")
+        df_ml = excluir_columnas_ml(df_ml, COLUMNAS_EXCLUIDAS_ML)
 
         # 3. Identificación de variables categóricas para One-Hot Encoding
         # Seleccionamos las columnas de tipo 'object' (strings) que quedan

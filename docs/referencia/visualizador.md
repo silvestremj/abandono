@@ -39,8 +39,8 @@ La interfaz Streamlit dispone de cuatro pestañas:
 | Pestaña | Función |
 |---------|---------|
 | Carga y ejecución | Subida de archivos, **modo de evaluación** y ejecución del pipeline |
-| Resultados | Métricas de entrenamiento, validación y pronóstico |
-| Alertas | Listado de alumnos en riesgo alto con justificación XAI |
+| Resultados | Métricas de entrenamiento, validación y pronóstico (incluye el conteo de `SIN_DATOS_SUFICIENTES`) |
+| Alertas | Listado de alumnos por nivel de riesgo (ALTO, MEDIO, BAJO) con justificación XAI, más un bloque aparte para `SIN_DATOS_SUFICIENTES` |
 | Árbol de decisión | Árbol único y en vivo por bimestre, con justificación y métricas cuando corresponde a la evaluación oficial del alumno |
 
 ---
@@ -56,6 +56,21 @@ La elección se guarda en `st.session_state.bimestre_corte_activo` (`None` en mo
 
 - **Resultados** añade la columna `bimestre_evaluado` al listado completo y muestra un aviso si, en modo simulación, algún alumno se evaluó por debajo del corte elegido por falta de datos reales.
 - **Árbol de decisión** la usa para el panel de justificación (ver abajo).
+
+---
+
+## Pestaña "Alertas"
+
+Separa a los alumnos PRONÓSTICO en bloques independientes por nivel de riesgo, cada uno construido por el método privado `_render_seccion_riesgo` para que los cuatro compartan exactamente la misma estructura (mensaje de cabecera, un `st.expander` por alumno con su justificación XAI, botón de descarga CSV):
+
+| Bloque | Tono si hay alumnos | Tono si está vacío |
+|--------|---------------------|---------------------|
+| Riesgo ALTO | `st.error` | `st.success` |
+| Riesgo MEDIO | `st.warning` | `st.info` |
+| Riesgo BAJO | `st.info` | `st.info` |
+| `SIN_DATOS_SUFICIENTES` | `st.warning` | (bloque oculto si no hay ninguno) |
+
+Los tres niveles de riesgo se muestran siempre, incluso con 0 alumnos: antes solo se listaba ALTO, y con pocos casos en ese nivel la pestaña quedaba casi vacía pese a haber decenas de alumnos en MEDIO/BAJO cuya justificación también es útil revisar. El bloque `SIN_DATOS_SUFICIENTES` se mantiene aparte de los tres de riesgo (con un simple listado en tabla, sin expanders individuales) porque no es una alerta de abandono sino una ausencia de información — mezclarlo con ALTO/MEDIO/BAJO confundiría "sin dato" con "riesgo bajo".
 
 ---
 

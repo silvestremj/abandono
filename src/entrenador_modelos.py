@@ -131,8 +131,19 @@ class EntrenadorModelos:
             continua_train = total_train - abandono_train
 
             # 6. Configurar y entrenar el modelo de caja blanca con Cost-Sensitive Learning
+            # min_samples_leaf=3: valor mínimo que garantiza estructuralmente que
+            # ninguna hoja quede respaldada por menos de 3 muestras de
+            # entrenamiento (min_samples_leaf=2 seguiría permitiendo hojas de
+            # exactamente 2). Corrige el sobreajuste documentado en
+            # docs/referencia/entrenador_modelos.md ("Limitación conocida:
+            # hojas de 1-2 muestras"), donde antes hasta el 58% de las hojas de
+            # un árbol tenían 1-2 muestras y predecían con 100%/0% de
+            # "confianza" sin respaldo estadístico real.
             modelo = DecisionTreeClassifier(
-                max_depth=5, random_state=42, class_weight="balanced"
+                max_depth=5,
+                random_state=42,
+                class_weight="balanced",
+                min_samples_leaf=3,
             )
             modelo.fit(X_train, y_train)
 

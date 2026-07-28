@@ -22,7 +22,11 @@ import pandas as pd
 
 from src.config import config
 from src.gestor_logs import GestorLogs
-from src.preparador_datos import COLUMNAS_EXCLUIDAS_ML, PreparadorDatos
+from src.preparador_datos import (
+    COLUMNAS_EXCLUIDAS_ML,
+    PreparadorDatos,
+    excluir_columnas_ml,
+)
 
 # ======================================================================
 # Columnas que se excluyen del dataset antes de la inferencia.
@@ -87,14 +91,25 @@ def preprocesar_fila_alumno(
     try:
         df = pd.DataFrame([fila])
 
-        df_ml = df.drop(
-            columns=[c for c in COLS_EXCLUIR if c in df.columns],
-            errors="ignore",
-        )
+        df_ml = excluir_columnas_ml(df, COLS_EXCLUIR)
 
+        # drop_first=False (a diferencia de preparar_dataset_ml, que sí usa
+        # drop_first=True sobre el dataset completo de entrenamiento, donde es
+        # correcto). Aquí se codifica una única fila, que por definición solo
+        # puede tener UN valor por variable categórica: con drop_first=True,
+        # pandas siempre descarta esa única categoría presente y genera 0
+        # columnas dummy para esa variable, así que el relleno posterior de
+        # "columnas_faltantes" con 0 termina poniendo a 0 la categoría real
+        # del alumno igual que las demás -- indistinguible de no tenerla. Con
+        # drop_first=False si la categoría del alumno coincide con una
+        # columna de columnas_entrenamiento queda correctamente en 1; si es
+        # la categoría de referencia que el entrenamiento descartó, queda en
+        # 0 en todas las dummies de esa variable (comportamiento correcto,
+        # igual que en entrenamiento). El alineado final a
+        # columnas_entrenamiento ya descarta cualquier dummy sobrante.
         cols_categoricas = df_ml.select_dtypes(include=["object"]).columns.tolist()
         df_ml = pd.get_dummies(
-            df_ml, columns=cols_categoricas, dummy_na=False, drop_first=True
+            df_ml, columns=cols_categoricas, dummy_na=False, drop_first=False
         )
 
         columnas_faltantes = [
@@ -191,6 +206,42 @@ class EvaluadorRiesgo:
                 if pd.notna(valor_nota) and valor_nota > 0:
                     return b
         return 1  # Por defecto, si no hay notas registradas aún, se evalúa con el modelo del Bimestre 1
+
+    def _sin_datos_reales_bimestre(
+        self, fila_alumno: pd.Series, bimestre: int
+    ) -> bool:
+        """Determina si el alumno no tiene ningún registro real hasta el
+        bimestre detectado (``nota_bN`` y ``asist_bN`` valen 0.0 a la vez).
+
+        :meth:`src.preparador_datos.PreparadorDatos.ejecutar_preparacion`
+        rellena con ``0.0`` las columnas de bimestres sin registro real, así
+        que ``nota_bN == 0.0`` puede significar tanto "sacó un cero" (un
+        predictor de abandono genuino) como "todavía no hay dato" (~91% de
+        los alumnos activos en el caso de B1, por la baja cobertura del CSV
+        de notas de origen). Se verificó empíricamente que, de los alumnos
+        que sí tienen algún dato parcial del bimestre, siempre hay al menos
+        uno de los dos valores (nota o asistencia) mayor que 0 — el
+        doble-cero conjunto es la señal fiable de ausencia de registro, sin
+        falsos positivos detectados sobre los datos reales del proyecto.
+
+        Args:
+            fila_alumno: Fila del DataFrame con los datos del alumno.
+            bimestre: Bimestre detectado para ese alumno.
+
+        Returns:
+            ``True`` si ``nota_bN`` y ``asist_bN`` existen y valen ambos
+            0.0 para el bimestre indicado.
+        """
+        col_nota = f"nota_b{bimestre}"
+        col_asist = f"asist_b{bimestre}"
+        valor_nota = fila_alumno.get(col_nota, np.nan)
+        valor_asist = fila_alumno.get(col_asist, np.nan)
+        return (
+            pd.notna(valor_nota)
+            and pd.notna(valor_asist)
+            and float(valor_nota) == 0.0
+            and float(valor_asist) == 0.0
+        )
 
     def _traducir_regla(
         self, nombre_caracteristica: str, umbral: float, valor: float
@@ -309,7 +360,13 @@ class EvaluadorRiesgo:
 
         Clasifica a cada alumno como HISTÓRICO, PRONÓSTICO o SIN REGISTRO.
         Para los PRONÓSTICOS, infiere probabilidad de abandono usando el modelo
-        del bimestre correspondiente, asigna nivel de riesgo y genera justificación XAI.
+        del bimestre correspondiente, asigna nivel de riesgo y genera
+        justificación XAI — salvo que no tenga ningún dato real (nota y
+        asistencia en 0.0 a la vez) hasta su bimestre detectado, en cuyo caso
+        se marca ``SIN_DATOS_SUFICIENTES`` sin ejecutar el modelo (ver
+        :meth:`_sin_datos_reales_bimestre`): un cero relleno por ausencia de
+        registro no es lo mismo que un cero real, y tratarlo como tal
+        generaría un falso ALTO.
 
         Args:
             df: Tabla maestra de estudiantes.
@@ -331,12 +388,15 @@ class EvaluadorRiesgo:
 
         Returns:
             DataFrame con columnas añadidas: ``tipo_prediccion``,
-            ``probabilidad_abandono``, ``nivel_riesgo``, ``justificacion_riesgo``
-            (generada para los tres niveles de riesgo — ALTO, MEDIO y BAJO —
-            de todo alumno evaluado; queda en ``"N/A"`` solo para quien no
-            llega a evaluarse), ``bimestre_evaluado`` (bimestre realmente
-            usado para evaluar a cada alumno PRONÓSTICO; entero nulo para los
-            que no se evalúan).
+            ``probabilidad_abandono``, ``nivel_riesgo`` (``ALTO``, ``MEDIO``,
+            ``BAJO``, ``SIN_DATOS_SUFICIENTES`` o ``NO_CALCULABLE``),
+            ``justificacion_riesgo`` (generada en lenguaje natural para los
+            tres niveles de riesgo y también para ``SIN_DATOS_SUFICIENTES``;
+            queda en ``"N/A"`` solo para quien no llega a evaluarse),
+            ``bimestre_evaluado`` (bimestre realmente usado para evaluar a
+            cada alumno PRONÓSTICO, incluidos los marcados
+            ``SIN_DATOS_SUFICIENTES``; entero nulo para los que no se
+            evalúan).
         """
         df_riesgo = df.copy()
 
@@ -392,6 +452,22 @@ class EvaluadorRiesgo:
             # Detectar en qué hito temporal (bimestre) se encuentra este alumno concreto
             # (recortado al techo bimestre_corte si se indicó uno)
             b_alumno = self._detectar_bimestre_alumno(df_deteccion.loc[idx])
+
+            # Si no hay ningún dato real (nota y asistencia en 0.0 a la vez)
+            # para el bimestre detectado, no hay señal sobre la que inferir:
+            # ejecutar el modelo sería predecir sobre ruido. Se marca un
+            # estado distinto de ALTO/MEDIO/BAJO/NO_CALCULABLE en lugar de
+            # arriesgar un falso ALTO (ver hallazgo del ~91% de cobertura
+            # real de notas_bimestre.csv entre alumnado activo).
+            if self._sin_datos_reales_bimestre(fila_original, b_alumno):
+                df_riesgo.loc[idx, "nivel_riesgo"] = "SIN_DATOS_SUFICIENTES"
+                df_riesgo.loc[idx, "bimestre_evaluado"] = b_alumno
+                df_riesgo.loc[idx, "justificacion_riesgo"] = (
+                    f"[Hito B{b_alumno}] Sin datos de asistencia ni de notas "
+                    f"registrados hasta el Bimestre {b_alumno}; no se puede "
+                    "evaluar el riesgo de forma fiable todavía."
+                )
+                continue
 
             # Recuperar el modelo adaptado a su realidad temporal
             modelo_b, columnas_b = self._obtener_modelo_bimestre(b_alumno)

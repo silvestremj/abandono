@@ -1,6 +1,10 @@
 import pandas as pd
 
-from src.evaluador_riesgo import EvaluadorRiesgo, ETIQUETAS_VARIABLES_CATEGORICAS
+from src.evaluador_riesgo import (
+    ETIQUETAS_VARIABLES_CATEGORICAS,
+    EvaluadorRiesgo,
+    preprocesar_fila_alumno,
+)
 
 
 class TestEvaluadorRiesgo:
@@ -122,6 +126,67 @@ class TestEvaluadorRiesgo:
         # No debe lanzar excepción y debe devolver algo utilizable como texto
         assert isinstance(frase, str) and len(frase) > 0
 
+    def test_alumno_sin_datos_reales_no_recibe_alto_medio_bajo(self):
+        """Hallazgo principal: preparador_datos rellena con 0.0 nota_bN/
+        asist_bN cuando no hay registro real, así que ese mismo 0.0 puede
+        significar "sacó un cero" (predictor genuino) o "sin dato todavía".
+        Un alumno PRONÓSTICO sin ningún dato real (doble-cero conjunto en
+        nota y asistencia) no debe recibir ALTO/MEDIO/BAJO -- sería
+        inferencia sobre ruido -- sino el estado SIN_DATOS_SUFICIENTES,
+        distinto de NO_CALCULABLE (que es para quien nunca llega a
+        evaluarse)."""
+        df_test = pd.DataFrame(
+            [
+                {
+                    "estado_actual": "En curso",
+                    "nota_b1": 0.0,
+                    "asist_b1": 0.0,
+                    "nota_b2": 0.0,
+                    "asist_b2": 0.0,
+                    "nota_b3": 0.0,
+                    "asist_b3": 0.0,
+                }
+            ]
+        )
+
+        resultado = self.evaluador.ejecutar_evaluacion(df_test)
+
+        assert resultado.loc[0, "nivel_riesgo"] == "SIN_DATOS_SUFICIENTES"
+        assert resultado.loc[0, "nivel_riesgo"] not in ("ALTO", "MEDIO", "BAJO", "NO_CALCULABLE")
+        assert pd.isna(resultado.loc[0, "probabilidad_abandono"])
+        assert resultado.loc[0, "bimestre_evaluado"] == 1
+
+        # Conserva el comportamiento ya existente: justificación en lenguaje
+        # natural con el prefijo de hito, no "N/A" (TASK-APP-02/03).
+        justificacion = str(resultado.loc[0, "justificacion_riesgo"])
+        assert justificacion != "N/A"
+        assert justificacion.startswith("[Hito B1]")
+        assert "Bimestre 1" in justificacion
+
+    def test_alumno_con_datos_reales_no_se_ve_afectado_por_el_fix_sin_datos(self):
+        """Un alumno PRONÓSTICO con datos reales (al menos nota o
+        asistencia > 0 en su bimestre) debe seguir evaluándose con
+        ALTO/MEDIO/BAJO como antes -- el fix de SIN_DATOS_SUFICIENTES no
+        debe alcanzar a quien sí tiene señal real."""
+        df_test = pd.DataFrame(
+            [
+                {
+                    "estado_actual": "En curso",
+                    "nota_b1": 3.0,
+                    "asist_b1": 0.40,
+                    "nota_b2": 0.0,
+                    "asist_b2": 0.0,
+                    "nota_b3": 0.0,
+                    "asist_b3": 0.0,
+                }
+            ]
+        )
+
+        resultado = self.evaluador.ejecutar_evaluacion(df_test)
+
+        assert resultado.loc[0, "nivel_riesgo"] in ("ALTO", "MEDIO", "BAJO")
+        assert pd.notna(resultado.loc[0, "probabilidad_abandono"])
+
     def test_bimestre_corte_actua_como_techo_no_como_valor_forzado(self):
         """TASK-APP-03: bimestre_corte debe recortar el futuro visible a la
         autodetección sin fingir datos que el alumno todavía no tiene."""
@@ -162,3 +227,47 @@ class TestEvaluadorRiesgo:
 
         resultado_b4 = self.evaluador.ejecutar_evaluacion(df_test, bimestre_corte=4)
         assert resultado_b4.loc[1, "bimestre_evaluado"] == 1
+
+    def test_preprocesar_fila_alumno_codifica_categoria_real_no_a_cero(self):
+        """Bug real detectado durante la verificación del caso E1311/MSE:
+        preprocesar_fila_alumno codifica con One-Hot Encoding UNA fila
+        aislada, que por definición solo puede tener un único valor por
+        variable categórica. Con drop_first=True, pandas siempre descarta
+        esa única categoría presente (genera 0 columnas dummy para esa
+        variable), y el relleno posterior de "columnas_faltantes" con 0
+        termina poniendo a 0 la categoría real del alumno igual que
+        cualquier otra -- indistinguible de no tenerla. Se verificó con
+        datos reales del proyecto que esto cambiaba el nivel_riesgo de 2 de
+        8 alumnos PRONÓSTICO con inferencia real (25%).
+
+        Este test simula el escenario exacto: un alumno con provincia
+        'CORDOBA', y un esquema de columnas de entrenamiento (como las que
+        genera preparar_dataset_ml sobre el dataset completo, con más de una
+        provincia presente) que incluye la dummy 'provincia_CORDOBA'. Con el
+        bug (drop_first=True) esa columna queda en 0 pese a ser la
+        provincia real del alumno; corregido (drop_first=False) debe quedar
+        en 1."""
+        fila = pd.Series(
+            {
+                "estado_actual": "En curso",
+                "nota_b1": 6.0,
+                "asist_b1": 0.70,
+                "provincia": "CORDOBA",
+            }
+        )
+        # Esquema de entrenamiento simulado: incluye la dummy de la
+        # provincia real del alumno más otra dummy de una provincia distinta
+        # (como saldría de preparar_dataset_ml sobre un dataset con varias
+        # provincias y drop_first=True aplicado sobre el conjunto completo).
+        columnas_entrenamiento = [
+            "nota_b1",
+            "asist_b1",
+            "provincia_CORDOBA",
+            "provincia_SANTA FE",
+        ]
+
+        resultado = preprocesar_fila_alumno(fila, columnas_entrenamiento)
+
+        assert resultado is not None
+        assert resultado.loc[0, "provincia_CORDOBA"] == 1
+        assert resultado.loc[0, "provincia_SANTA FE"] == 0

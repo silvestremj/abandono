@@ -96,7 +96,7 @@ class Visualizador:
         print("  REPORTE DE RIESGO DE ABANDONO ACADÉMICO")
         print("=" * 60)
         conteo = df_riesgo["nivel_riesgo"].value_counts()
-        for nivel in ["ALTO", "MEDIO", "BAJO", "NO_CALCULABLE"]:
+        for nivel in ["ALTO", "MEDIO", "BAJO", "SIN_DATOS_SUFICIENTES", "NO_CALCULABLE"]:
             print(f"  {nivel}: {conteo.get(nivel, 0)}")
 
     def exportar_csv(self, df_riesgo: pd.DataFrame) -> Optional[str]:
@@ -686,17 +686,25 @@ class Visualizador:
                     p_alto = len(df_pronostico[df_pronostico["nivel_riesgo"] == "ALTO"])
                     p_medio = len(df_pronostico[df_pronostico["nivel_riesgo"] == "MEDIO"])
                     p_bajo = len(df_pronostico[df_pronostico["nivel_riesgo"] == "BAJO"])
+                    p_sin_datos = len(
+                        df_pronostico[df_pronostico["nivel_riesgo"] == "SIN_DATOS_SUFICIENTES"]
+                    )
 
                     st.subheader("Distribución de riesgo pronosticado")
-                    c_a, c_m, c_b = st.columns(3)
+                    c_a, c_m, c_b, c_s = st.columns(4)
                     c_a.metric("Riesgo alto", p_alto)
                     c_m.metric("Riesgo medio", p_medio)
                     c_b.metric("Riesgo bajo", p_bajo)
+                    c_s.metric("Sin datos suficientes", p_sin_datos)
 
                     st.caption(
                         "Estos alumnos **no tienen etiqueta conocida**. "
                         "El modelo asigna su nivel de riesgo basándose en su "
-                        "rendimiento académico actual."
+                        "rendimiento académico actual. Los marcados como "
+                        "'Sin datos suficientes' todavía no tienen notas ni "
+                        "asistencia registradas para su bimestre actual, así "
+                        "que no se ejecuta el modelo sobre ellos (evita "
+                        "confundir 'sin dato' con 'rindió cero')."
                     )
 
                 # Modo "Fijar bimestre de corte": avisar si algún alumno no
@@ -735,6 +743,61 @@ class Visualizador:
         cols_mostrar = [c for c in cols_clave if c in df.columns]
         st.dataframe(df[cols_mostrar], width="stretch", hide_index=True)
 
+    def _render_seccion_riesgo(
+        self,
+        nivel: str,
+        alumnos: pd.DataFrame,
+        titulo: str,
+        fn_vacio,
+        fn_alerta,
+        mensaje_vacio: str,
+        mensaje_alerta: str,
+    ) -> None:
+        """Renderiza el bloque de alertas de un nivel de riesgo (ALTO/MEDIO/BAJO).
+
+        Antes solo se listaban los alumnos en ALTO: con muy pocos casos en
+        ese nivel (p.ej. 2), la pestaña quedaba casi vacía pese a haber
+        decenas de alumnos en MEDIO/BAJO cuya justificación también es útil
+        revisar. Se factoriza en un único método porque las tres secciones
+        comparten exactamente la misma estructura (mensaje de cabecera,
+        expander por alumno con su justificación, descarga CSV) y solo
+        cambia el tono visual y el texto.
+
+        Args:
+            nivel: Nombre del nivel de riesgo (``"ALTO"``, ``"MEDIO"`` o
+                ``"BAJO"``), usado para la clave del widget y el nombre del CSV.
+            alumnos: Subconjunto de alumnos en ese nivel de riesgo.
+            titulo: Encabezado de la sección.
+            fn_vacio: Función de Streamlit a usar cuando no hay alumnos
+                (p.ej. ``st.success``, ``st.info``).
+            fn_alerta: Función de Streamlit a usar cuando sí hay alumnos
+                (p.ej. ``st.error``, ``st.warning``, ``st.info``).
+            mensaje_vacio: Texto a mostrar cuando ``alumnos`` está vacío.
+            mensaje_alerta: Texto a mostrar cuando ``alumnos`` no está vacío.
+        """
+        st.subheader(titulo)
+        if alumnos.empty:
+            fn_vacio(mensaje_vacio)
+            return
+
+        fn_alerta(mensaje_alerta)
+        for _, alumno in alumnos.iterrows():
+            with st.expander(
+                f"{alumno.get('n_siu', '?')} - {alumno.get('estudio', '?')}"
+            ):
+                st.write(
+                    f"**Justificación:** {alumno.get('justificacion_riesgo', 'N/A')}"
+                )
+
+        csv = alumnos.to_csv(index=False, sep=";", decimal=",").encode("utf-8")
+        st.download_button(
+            f"Descargar riesgo {nivel.lower()} (CSV)",
+            csv,
+            f"riesgo_{nivel.lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
+            "text/csv",
+            key=f"descarga_csv_riesgo_{nivel.lower()}",
+        )
+
     def _render_alertas(self):
         if not st.session_state.pipeline_ok or st.session_state.df_riesgo is None:
             st.info("Ejecuta los cálculos para generar alertas.")
@@ -742,29 +805,70 @@ class Visualizador:
 
         df = st.session_state.df_riesgo
         alumnos_alto = df[df["nivel_riesgo"] == "ALTO"]
+        alumnos_medio = df[df["nivel_riesgo"] == "MEDIO"]
+        alumnos_bajo = df[df["nivel_riesgo"] == "BAJO"]
+        alumnos_sin_datos = df[df["nivel_riesgo"] == "SIN_DATOS_SUFICIENTES"]
 
-        if alumnos_alto.empty:
-            st.success("No se detectaron alumnos en riesgo alto de abandono.")
-        else:
-            st.error(
-                f"Atención: {len(alumnos_alto)} alumno(s) en RIESGO ALTO de abandono."
+        self._render_seccion_riesgo(
+            "ALTO",
+            alumnos_alto,
+            "Riesgo alto",
+            st.success,
+            st.error,
+            "No se detectaron alumnos en riesgo alto de abandono.",
+            f"Atención: {len(alumnos_alto)} alumno(s) en RIESGO ALTO de abandono.",
+        )
+
+        st.markdown("---")
+        self._render_seccion_riesgo(
+            "MEDIO",
+            alumnos_medio,
+            "Riesgo medio",
+            st.info,
+            st.warning,
+            "No se detectaron alumnos en riesgo medio de abandono.",
+            f"{len(alumnos_medio)} alumno(s) en riesgo MEDIO de abandono.",
+        )
+
+        st.markdown("---")
+        self._render_seccion_riesgo(
+            "BAJO",
+            alumnos_bajo,
+            "Riesgo bajo",
+            st.info,
+            st.info,
+            "No se detectaron alumnos en riesgo bajo de abandono.",
+            f"{len(alumnos_bajo)} alumno(s) en riesgo BAJO de abandono.",
+        )
+
+        # Bloque aparte, no mezclado con las alertas de riesgo: estos alumnos
+        # no tienen ningún dato real todavía (ver EvaluadorRiesgo.
+        # _sin_datos_reales_bimestre), así que no representan una alerta de
+        # abandono sino una ausencia de señal a la que hacer seguimiento.
+        if not alumnos_sin_datos.empty:
+            st.markdown("---")
+            st.warning(
+                f"{len(alumnos_sin_datos)} alumno(s) sin datos suficientes "
+                "para evaluar: no tienen notas ni asistencia registradas "
+                "hasta su bimestre actual. No es una alerta de riesgo, es "
+                "una ausencia de información."
             )
-
-            for _, alumno in alumnos_alto.iterrows():
-                with st.expander(
-                    f"Alerta: {alumno.get('n_siu', '?')} - {alumno.get('estudio', '?')}"
-                ):
-                    st.write(
-                        f"**Justificación:** {alumno.get('justificacion_riesgo', 'N/A')}"
-                    )
-
-            csv = alumnos_alto.to_csv(index=False, sep=";", decimal=",").encode("utf-8")
-            st.download_button(
-                "Descargar alertas (CSV)",
-                csv,
-                f"alertas_abandono_{datetime.now().strftime('%Y%m%d')}.csv",
-                "text/csv",
-            )
+            with st.expander("Alumnos sin datos suficientes para evaluar"):
+                cols_sin_datos = [
+                    c
+                    for c in [
+                        "n_siu",
+                        "estudio",
+                        "bimestre_evaluado",
+                        "justificacion_riesgo",
+                    ]
+                    if c in alumnos_sin_datos.columns
+                ]
+                st.dataframe(
+                    alumnos_sin_datos[cols_sin_datos],
+                    width="stretch",
+                    hide_index=True,
+                )
 
     def _render_arbol(self):
         st.header("Árbol de decisión por bimestre")
