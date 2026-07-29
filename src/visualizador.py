@@ -10,7 +10,7 @@ Uso en consola::
 
     from src.visualizador import Visualizador
     vista = Visualizador()
-    vista.mostrar_en_consola(df_final, stats)
+    vista.mostrar_en_consola(df_final)
     vista.exportar_csv(df_final)
 
 Uso en Streamlit::
@@ -63,11 +63,18 @@ if "bimestre_corte_activo" not in st.session_state:
 
 
 class Visualizador:
+    """Presentación de resultados en consola y en la interfaz Streamlit.
+
+    Attributes:
+        config: Instancia de :class:`ConfigLoader` con la configuración del proyecto.
+        logger: Instancia de :class:`GestorLogs` para trazabilidad.
+    """
+
     def __init__(
         self,
         configuracion: Optional[ConfigLoader] = None,
         gestor_logs: Optional[GestorLogs] = None,
-    ):
+    ) -> None:
         """Inicializa el visualizador con configuración y logger opcionales.
 
         Args:
@@ -82,12 +89,11 @@ class Visualizador:
     # ======================================================================
     # Compatibilidad con pipeline de consola (main.py)
     # ======================================================================
-    def mostrar_en_consola(self, df_riesgo: pd.DataFrame, stats: dict) -> None:
+    def mostrar_en_consola(self, df_riesgo: pd.DataFrame) -> None:
         """Muestra un reporte de texto en la consola con el conteo por nivel de riesgo.
 
         Args:
             df_riesgo: DataFrame con la columna ``nivel_riesgo``.
-            stats: Estadísticas calculadas por el :class:`Analizador`.
         """
         if df_riesgo.empty:
             print("No hay datos para mostrar.")
@@ -329,7 +335,6 @@ class Visualizador:
         fila_alumno: Optional[pd.DataFrame] = None,
         nivel_riesgo: Optional[str] = None,
         alumno_id: Optional[str] = None,
-        guardar_ruta: Optional[str] = None,
     ) -> Optional[Figure]:
         """Genera la visualización del árbol de decisión de un bimestre,
         con la posibilidad de resaltar la ruta de decisión de un alumno.
@@ -342,7 +347,6 @@ class Visualizador:
             nivel_riesgo: Nivel de riesgo del alumno (``ALTO``, ``MEDIO``,
                 ``BAJO``). Determina el color de la ruta resaltada.
             alumno_id: Identificador del alumno para incluir en el título.
-            guardar_ruta: Si se indica, guarda la imagen PNG en esta ruta.
 
         Returns:
             Figura de matplotlib o ``None`` si el modelo no existe.
@@ -433,10 +437,6 @@ class Visualizador:
             fontweight="bold",
             y=0.97,
         )
-
-        if guardar_ruta:
-            os.makedirs(os.path.dirname(guardar_ruta), exist_ok=True)
-            fig.savefig(guardar_ruta, dpi=150, bbox_inches="tight")
 
         return fig
 

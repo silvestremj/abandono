@@ -93,7 +93,7 @@ def main() -> None:
 
         # 7. Presentación
         vista = Visualizador()
-        vista.mostrar_en_consola(df_final, stats)
+        vista.mostrar_en_consola(df_final)
         vista.exportar_csv(df_final)
         log.registrar("INF_5", "Resultados presentados y exportados")
 

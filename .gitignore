@@ -21,11 +21,5 @@ __pycache__/
 logs/
 *.log
 
-# Imágenes de árboles de decisión
-assets/
-
 # Documentación generada por Zensical
 site/
-
-# Mensajes de commit
-commit_message.txt

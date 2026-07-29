@@ -19,7 +19,7 @@ Módulo de presentación de resultados: consola, CSV y interfaz web (Streamlit).
 from src.visualizador import Visualizador
 
 vista = Visualizador()
-vista.mostrar_en_consola(df_final, stats)
+vista.mostrar_en_consola(df_final)
 ruta = vista.exportar_csv(df_final)
 print(f"Exportado a: {ruta}")
 ```
@@ -83,4 +83,4 @@ Muestra un **único árbol, en vivo** (sin botón de por medio): cambiar el bime
   - La frase de `justificacion_riesgo` en lenguaje natural.
   - El `bimestre_evaluado` y, en modo simulación, si coincide o no con el corte fijado.
   - Las métricas (`Accuracy`, `Recall (Abandono)`, `Variable Clave`) de `df_metricas` para ese mismo Hito.
-- "Descargar imagen PNG" entrega el archivo directamente al navegador del usuario (a su carpeta de descargas habitual) sin escribir nada en el servidor: reutiliza la misma figura ya mostrada en pantalla (vía un buffer en memoria, `io.BytesIO`), nunca regenera un árbol distinto para el archivo descargado ni deja copias en `assets/` del lado del servidor.
+- "Descargar imagen PNG" entrega el archivo directamente al navegador del usuario (a su carpeta de descargas habitual) sin escribir nada en el servidor: reutiliza la misma figura ya mostrada en pantalla (vía un buffer en memoria, `io.BytesIO`) y nunca regenera un árbol distinto para el archivo descargado. `graficar_arbol` ya no admite guardar una copia en disco del lado del servidor (parámetro `guardar_ruta`, eliminado): la única vía de descarga es esta, directa al equipo del usuario.

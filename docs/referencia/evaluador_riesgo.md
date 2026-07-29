@@ -61,6 +61,14 @@ En la interfaz web ([Visualizador](visualizador.md)), estos alumnos se muestran 
 
 ---
 
+## Detección del bimestre actual: nota o asistencia, no solo nota — corregida
+
+`_detectar_bimestre_alumno` recorre los bimestres de atrás hacia adelante buscando el primero con dato real. Hasta esta corrección solo comprobaba `nota_bN > 0`: un alumno que asistió pero sacó un cero real en su bimestre más reciente (`nota_bN == 0.0` con `asist_bN > 0`) no se detectaba en ese bimestre, sino en uno anterior con nota positiva — ignorando su registro real más reciente y evaluándolo con el modelo equivocado.
+
+**Fix**: ahora se detecta el bimestre si `nota_bN > 0` **o** `asist_bN > 0`. La ambigüedad opuesta (ningún dato real, doble-cero conjunto en nota y asistencia) la sigue resolviendo `_sin_datos_reales_bimestre` para el bimestre ya detectado (ver [arriba](#estado-sin_datos_suficientes)).
+
+---
+
 ## Codificación de categóricas en inferencia por fila — corregida
 
 `preprocesar_fila_alumno` codifica con One-Hot Encoding la fila de **un solo alumno** para alinearla al esquema de `columnas_bN.pkl`. Hasta esta corrección usaba `drop_first=True`, igual que `preparar_dataset_ml` en `PreparadorDatos` — pero ahí es donde estaba el problema: una fila aislada solo puede tener **un** valor por variable categórica (una sola provincia, un solo tipo de estudio...), y `pd.get_dummies(..., drop_first=True)` sobre una columna con una única categoría presente genera **0 columnas dummy** para esa variable (no hay una "segunda" categoría de la que distinguirla). El paso siguiente, que rellena con `0` las `columnas_entrenamiento` que faltan en `df_ml`, terminaba entonces poniendo a `0` la categoría **real** del alumno exactamente igual que si no la tuviera — indistinguible de cualquier otra categoría ausente.

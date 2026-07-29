@@ -22,6 +22,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 
 from src.config import config
+from src.preparador_datos import PreparadorDatos
 
 
 class EntrenadorModelos:
@@ -68,7 +69,7 @@ class EntrenadorModelos:
         forzar = config.machine_learning.get("forzar_entrenamiento", False)
         return forzar or not os.path.exists(ruta_modelo_b1)
 
-    def entrenar_y_guardar(self, df_ml: pd.DataFrame, preparador: "PreparadorDatos") -> pd.DataFrame:
+    def entrenar_y_guardar(self, df_ml: pd.DataFrame, preparador: PreparadorDatos) -> pd.DataFrame:
         """
         Entrena múltiples modelos independientes por cada hito bimestral
         y almacena sus métricas para permitir la comparación temporal.

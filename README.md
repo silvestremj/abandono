@@ -181,13 +181,17 @@ Antes de entrenar los modelos, el sistema elimina automáticamente las variables
 
 ## Instrucciones de Uso
 
-1. Guardar los ficheros de datos en la carpeta `data/` en la raíz del proyecto.
-2. Ejecutar desde la terminal (en la carpeta del proyecto):
+1. Instalar las dependencias del proyecto:
+   ```
+   pip install -r requirements.txt
+   ```
+2. Guardar los ficheros de datos en la carpeta `data/` en la raíz del proyecto.
+3. Ejecutar desde la terminal (en la carpeta del proyecto):
    ```
    streamlit run src/visualizador.py
    ```
-3. Se abrirá la interfaz web en el navegador. Desde allí se pueden cargar los datos, ejecutar los cálculos y visualizar los resultados.
-4. Los resultados también se exportan a la carpeta `output/` en formato CSV.
+4. Se abrirá la interfaz web en el navegador. Desde allí se pueden cargar los datos, ejecutar los cálculos y visualizar los resultados.
+5. Los resultados también se exportan a la carpeta `output/` en formato CSV.
 
 > **Nota**: El modo de ejecución puede cambiar en futuras versiones para que la persona usuaria no necesite usar la terminal.
 

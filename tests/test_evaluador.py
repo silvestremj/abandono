@@ -187,6 +187,19 @@ class TestEvaluadorRiesgo:
         assert resultado.loc[0, "nivel_riesgo"] in ("ALTO", "MEDIO", "BAJO")
         assert pd.notna(resultado.loc[0, "probabilidad_abandono"])
 
+    def test_deteccion_de_bimestre_considera_asistencia_no_solo_nota(self):
+        """Un alumno que asistió pero sacó un cero real en su bimestre más
+        reciente (``nota_bN == 0.0`` con ``asist_bN > 0``) debe detectarse
+        en ESE bimestre, no en uno anterior con nota positiva: el cero es
+        un dato real de ese bimestre, no ausencia de registro (que exige
+        nota Y asistencia en 0.0 a la vez, ver
+        ``_sin_datos_reales_bimestre``)."""
+        fila = pd.Series(
+            {"nota_b1": 8.0, "asist_b1": 0.90, "nota_b2": 0.0, "asist_b2": 0.55}
+        )
+
+        assert self.evaluador._detectar_bimestre_alumno(fila) == 2
+
     def test_bimestre_corte_actua_como_techo_no_como_valor_forzado(self):
         """TASK-APP-03: bimestre_corte debe recortar el futuro visible a la
         autodetección sin fingir datos que el alumno todavía no tiene."""

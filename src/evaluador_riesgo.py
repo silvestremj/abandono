@@ -64,6 +64,7 @@ ETIQUETAS_VARIABLES_CATEGORICAS: Dict[str, str] = {
     "provincia": "su provincia de residencia",
     "max_grado": "su nivel máximo de estudios",
     "tipo_ocupacion": "su ocupación actual",
+    "estudio": "el programa académico en el que está inscrito",
 }
 
 
@@ -133,6 +134,9 @@ class EvaluadorRiesgo:
     Attributes:
         reglas: Diccionario con las reglas de negocio para clasificación
             de estados (bajo, medio, alto riesgo).
+        max_bimestre: Último bimestre configurado (``config.yaml``,
+            ``machine_learning.max_bimestre``).
+        logger: Instancia de :class:`GestorLogs` para trazabilidad.
         model_dir: Ruta al directorio de modelos guardados.
         modelos_cache: Caché de modelos cargados por bimestre.
         columnas_cache: Caché de listas de columnas por bimestre.
@@ -191,6 +195,16 @@ class EvaluadorRiesgo:
         """Determina el hito temporal actual del alumno buscando desde el último
         bimestre configurado hacia B1.
 
+        Un bimestre cuenta como "el actual" si tiene nota o asistencia
+        real (mayor que 0): un alumno puede asistir y sacar un cero real en
+        su bimestre más reciente, y ese cero sigue siendo un dato real de
+        ese bimestre, no ausencia de registro. Comprobar solo la nota
+        detectaría a ese alumno en un bimestre anterior, ignorando su
+        registro real más reciente. La ambigüedad opuesta (nota y
+        asistencia en 0.0 a la vez, sin ningún dato real) la resuelve
+        :meth:`_sin_datos_reales_bimestre` para el bimestre ya detectado
+        aquí.
+
         Args:
             fila_alumno: Fila del DataFrame con los datos del alumno.
 
@@ -199,12 +213,12 @@ class EvaluadorRiesgo:
         """
         # Buscamos de atrás hacia adelante (del último bimestre al 1) cuál es el primero con datos válidos
         for b in range(self.max_bimestre, 0, -1):
-            col_nota = f"nota_b{b}"
-            if col_nota in fila_alumno.index:
-                valor_nota = fila_alumno[col_nota]
-                # Si la nota no es nula, ni vacía, ni cero puro sin asistencia, asumimos que está en este hito
-                if pd.notna(valor_nota) and valor_nota > 0:
-                    return b
+            valor_nota = fila_alumno.get(f"nota_b{b}", np.nan)
+            valor_asist = fila_alumno.get(f"asist_b{b}", np.nan)
+            tiene_nota = pd.notna(valor_nota) and valor_nota > 0
+            tiene_asist = pd.notna(valor_asist) and valor_asist > 0
+            if tiene_nota or tiene_asist:
+                return b
         return 1  # Por defecto, si no hay notas registradas aún, se evalúa con el modelo del Bimestre 1
 
     def _sin_datos_reales_bimestre(
