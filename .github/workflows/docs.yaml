@@ -1,4 +1,4 @@
-- name: Zensical Action
+name: Zensical Action
   id: zensical
   uses: cssnr/zensical-action@v1
   with:
