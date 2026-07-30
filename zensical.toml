@@ -4,6 +4,23 @@ site_description = "Documentación oficial del pipeline de datos y modelos."
 
 language = "es"
 
+nav = [
+    { "Inicio" = "index.md" },
+    { "Arquitectura" = "arquitectura.md" },
+    { "Referencia del Código" = [
+        { "Configuración" = "referencia/configuracion.md" },
+        { "Base de Datos" = "referencia/base_datos.md" },
+        { "Logs y Trazabilidad" = "referencia/logs.md" },
+        { "Ingestor de Datos" = "referencia/ingestor_datos.md" },
+        { "Preparador de Datos" = "referencia/preparador_datos.md" },
+        { "Analizador de Datos" = "referencia/analizador_datos.md" },
+        { "Entrenador de Modelos" = "referencia/entrenador_modelos.md" },
+        { "Evaluador de Riesgo" = "referencia/evaluador_riesgo.md" },
+        { "Visualizador" = "referencia/visualizador.md" },
+        { "Orquestador" = "referencia/orquestador.md" },
+    ]},
+]
+
 [project.theme]
 features = [
     "announce.dismiss",
@@ -35,20 +52,3 @@ toggle.name = "Cambiar a modo claro"
 
 [project.plugins.mkdocstrings.handlers.python]
 paths = ["."]
-
-nav = [
-    { "Inicio" = "index.md" },
-    { "Arquitectura" = "arquitectura.md" },
-    { "Referencia del Código" = [
-        { "Configuración" = "referencia/configuracion.md" },
-        { "Base de Datos" = "referencia/base_datos.md" },
-        { "Logs y Trazabilidad" = "referencia/logs.md" },
-        { "Ingestor de Datos" = "referencia/ingestor_datos.md" },
-        { "Preparador de Datos" = "referencia/preparador_datos.md" },
-        { "Analizador de Datos" = "referencia/analizador_datos.md" },
-        { "Entrenador de Modelos" = "referencia/entrenador_modelos.md" },
-        { "Evaluador de Riesgo" = "referencia/evaluador_riesgo.md" },
-        { "Visualizador" = "referencia/visualizador.md" },
-        { "Orquestador" = "referencia/orquestador.md" },
-    ]},
-]
