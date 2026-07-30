@@ -22,4 +22,4 @@ jobs:
           upload: 'github-pages'
           deploy: true
           prepare: |
-            uv pip install "mkdocstrings[python]==1.0.3"
+            uv tool install --force --with "mkdocstrings[python]==1.0.3" "zensical==${ZENSICAL_VERSION}"
