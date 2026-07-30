@@ -16,7 +16,10 @@ jobs:
         id: zensical
         uses: cssnr/zensical-action@v1
         with:
+          version: '0.0.31'
           directory: '.'
           path: 'site'
           upload: 'github-pages'
           deploy: true
+          prepare: |
+            uv pip install "mkdocstrings[python]==1.0.3"
