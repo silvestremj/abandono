@@ -1,0 +1,9 @@
+- name: Zensical Action
+  id: zensical
+  uses: cssnr/zensical-action@v1
+  with:
+    version: 'latest'        # O una versión específica
+    directory: '.'           # Dónde está tu config de Zensical
+    path: 'site'            # Carpeta de salida
+    upload: 'github-pages'  # Tipo de despliegue
+    deploy: true            # Activar despliegue automático
