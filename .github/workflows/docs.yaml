@@ -1,9 +1,23 @@
 name: Zensical Action
-  id: zensical
-  uses: cssnr/zensical-action@v1
-  with:
-    version: 'latest'        # O una versión específica
-    directory: '.'           # Dónde está tu config de Zensical
-    path: 'site'            # Carpeta de salida
-    upload: 'github-pages'  # Tipo de despliegue
-    deploy: true            # Activar despliegue automático
+on:
+  push:
+jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.zensical.outputs.page_url }}
+    steps:
+      - name: Zensical Action
+        id: zensical
+        uses: cssnr/zensical-action@v1
+        with:
+          version: 'latest'
+          directory: '.'
+          path: 'site'
+          upload: 'github-pages'
+          deploy: true
