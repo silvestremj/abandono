@@ -1,0 +1,25 @@
+name: Zensical Action
+on:
+  push:
+jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.zensical.outputs.page_url }}
+    steps:
+      - name: Zensical Action
+        id: zensical
+        uses: cssnr/zensical-action@v1
+        with:
+          version: '0.0.31'
+          directory: '.'
+          path: 'site'
+          upload: 'github-pages'
+          deploy: true
+          prepare: |
+            uv tool install --force --with "mkdocstrings[python]==1.0.3" "zensical==${ZENSICAL_VERSION}"
