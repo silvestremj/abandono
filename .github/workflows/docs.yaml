@@ -16,7 +16,6 @@ jobs:
         id: zensical
         uses: cssnr/zensical-action@v1
         with:
-          version: 'latest'
           directory: '.'
           path: 'site'
           upload: 'github-pages'
