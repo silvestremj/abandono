@@ -97,7 +97,9 @@ class TestEvaluadorRiesgo:
         """Un alumno HISTÓRICO (no evaluado) sí debe mantener "N/A": no hay
         ninguna ruta de decisión que justificar porque nunca se ejecuta el
         modelo para él."""
-        df_test = pd.DataFrame([{"estado_actual": "Recibido", "nota_b1": 8.0, "asist_b1": 0.90}])
+        df_test = pd.DataFrame(
+            [{"estado_actual": "Recibido", "nota_b1": 8.0, "asist_b1": 0.90}]
+        )
 
         resultado = self.evaluador.ejecutar_evaluacion(df_test)
 
@@ -152,7 +154,12 @@ class TestEvaluadorRiesgo:
         resultado = self.evaluador.ejecutar_evaluacion(df_test)
 
         assert resultado.loc[0, "nivel_riesgo"] == "SIN_DATOS_SUFICIENTES"
-        assert resultado.loc[0, "nivel_riesgo"] not in ("ALTO", "MEDIO", "BAJO", "NO_CALCULABLE")
+        assert resultado.loc[0, "nivel_riesgo"] not in (
+            "ALTO",
+            "MEDIO",
+            "BAJO",
+            "NO_CALCULABLE",
+        )
         assert pd.isna(resultado.loc[0, "probabilidad_abandono"])
         assert resultado.loc[0, "bimestre_evaluado"] == 1
 
@@ -284,3 +291,21 @@ class TestEvaluadorRiesgo:
         assert resultado is not None
         assert resultado.loc[0, "provincia_CORDOBA"] == 1
         assert resultado.loc[0, "provincia_SANTA FE"] == 0
+
+    def test_umbrales_de_riesgo_se_leen_de_la_configuracion(self, monkeypatch):
+        """Los umbrales de alerta viven en config.yaml, no en el código.
+        Fija el contrato descrito en la memoria: ajustar los umbrales
+        no debe exigir editar evaluador_riesgo.py.
+        """
+        from src import evaluador_riesgo as mod
+
+        reglas = dict(mod.config.reglas_riesgo)
+        reglas.update({"umbral_medio": 0.25, "umbral_alto": 0.55})
+        monkeypatch.setattr(
+            type(mod.config), "reglas_riesgo", property(lambda self: reglas)
+        )
+
+        evaluador = mod.EvaluadorRiesgo()
+
+        assert evaluador.umbral_medio == 0.25
+        assert evaluador.umbral_alto == 0.55

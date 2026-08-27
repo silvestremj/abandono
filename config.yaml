@@ -25,6 +25,10 @@ reglas_riesgo:
   palabras_bajo_riesgo: ["RECIBIDO"]
   palabras_medio_riesgo: ["CURSO", "PAUSA"]
   palabras_alto_riesgo: ["ABANDONO", "LIBRE", "BAJA"]
+  # Umbrales de probabilidad de abandono que delimitan el nivel de alerta:
+  # ALTO si p >= umbral_alto, MEDIO si p >= umbral_medio, BAJO en el resto.
+  umbral_medio: 0.40
+  umbral_alto: 0.70
 
 # Configuración del modelo de machine learning
 machine_learning:

@@ -136,6 +136,10 @@ class EvaluadorRiesgo:
             de estados (bajo, medio, alto riesgo).
         max_bimestre: Último bimestre configurado (``config.yaml``,
             ``machine_learning.max_bimestre``).
+        umbral_medio: Probabilidad mínima para clasificar la alerta como MEDIO
+            (``config.yaml``, ``reglas_riesgo.umbral_medio``).
+        umbral_alto: Probabilidad mínima para clasificar la alerta como ALTO
+            (``config.yaml``, ``reglas_riesgo.umbral_alto``).
         logger: Instancia de :class:`GestorLogs` para trazabilidad.
         model_dir: Ruta al directorio de modelos guardados.
         modelos_cache: Caché de modelos cargados por bimestre.
@@ -157,6 +161,8 @@ class EvaluadorRiesgo:
         """
         self.reglas: Dict[str, Any] = config.reglas_riesgo
         self.max_bimestre: int = config.machine_learning.get("max_bimestre", 6)
+        self.umbral_medio: float = float(self.reglas.get("umbral_medio", 0.40))
+        self.umbral_alto: float = float(self.reglas.get("umbral_alto", 0.70))
         self.logger = gestor_logs or GestorLogs()
 
         if model_dir is None:
@@ -221,9 +227,7 @@ class EvaluadorRiesgo:
                 return b
         return 1  # Por defecto, si no hay notas registradas aún, se evalúa con el modelo del Bimestre 1
 
-    def _sin_datos_reales_bimestre(
-        self, fila_alumno: pd.Series, bimestre: int
-    ) -> bool:
+    def _sin_datos_reales_bimestre(self, fila_alumno: pd.Series, bimestre: int) -> bool:
         """Determina si el alumno no tiene ningún registro real hasta el
         bimestre detectado (``nota_bN`` y ``asist_bN`` valen 0.0 a la vez).
 
@@ -314,7 +318,7 @@ class EvaluadorRiesgo:
         for variable_base, etiqueta in ETIQUETAS_VARIABLES_CATEGORICAS.items():
             prefijo = f"{variable_base}_"
             if nombre_caracteristica.startswith(prefijo):
-                categoria = nombre_caracteristica[len(prefijo):]
+                categoria = nombre_caracteristica[len(prefijo) :]
                 verbo = "no es" if es_menor_igual else "es"
                 return f"{etiqueta} {verbo} '{categoria}'"
 
@@ -417,7 +421,11 @@ class EvaluadorRiesgo:
         # 1. Clasificar alumnos: HISTÓRICO (tienen target conocido) vs PRONÓSTICO (activos sin etiqueta)
         def es_etiquetado(estado: str) -> bool:
             est = str(estado).upper()
-            return any(p in est for p in self.reglas.get("palabras_bajo_riesgo", []) + self.reglas.get("palabras_alto_riesgo", []))
+            return any(
+                p in est
+                for p in self.reglas.get("palabras_bajo_riesgo", [])
+                + self.reglas.get("palabras_alto_riesgo", [])
+            )
 
         def es_evaluable(estado: str) -> bool:
             est = str(estado).upper()
@@ -501,9 +509,9 @@ class EvaluadorRiesgo:
             df_riesgo.loc[idx, "bimestre_evaluado"] = b_alumno
 
             # Aplicar reglas de negocio para los umbrales
-            if prob >= 0.70:
+            if prob >= self.umbral_alto:
                 nivel = "ALTO"
-            elif prob >= 0.40:
+            elif prob >= self.umbral_medio:
                 nivel = "MEDIO"
             else:
                 nivel = "BAJO"
