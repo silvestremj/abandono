@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 
 from src.preparador_datos import PreparadorDatos
@@ -175,6 +177,79 @@ class TestPreparadorDatos:
         # Y sigue conservando las columnas predictivas legítimas.
         assert "nota_b1" in df_ml.columns
         assert "asist_b1" in df_ml.columns
+
+    def test_columnas_baja_no_se_confunden_con_columnas_de_bimestre(self):
+        """Las columnas fecha_baja, estado_baja, causa_baja y comentario_baja
+        contienen la subcadena "_b" y antes se detectaban como columnas de
+        bimestre (nota_bN/asist_bN), quedando convertidas a 0.0 por el
+        relleno de nulos y la coerción numérica de esas columnas."""
+        df_actual_test = pd.DataFrame(
+            [
+                {
+                    "n_siu": "1001",
+                    "estudio": "CESE",
+                    "estado_actual": "Abandono",
+                    "estado_baja": "ABANDONÓ",
+                    "causa_baja": "Tema personal.",
+                    "fecha_baja": 2021,
+                    "comentario_baja": None,
+                    "Unnamed: 28": None,
+                },
+                {
+                    "n_siu": "1002",
+                    "estudio": "CESE",
+                    "estado_actual": "Recibido",
+                    "estado_baja": None,
+                    "causa_baja": None,
+                    "fecha_baja": None,
+                    "comentario_baja": None,
+                    "Unnamed: 28": None,
+                },
+            ]
+        )
+        df_notas_test = pd.DataFrame(
+            [
+                {
+                    "n_siu": "1001",
+                    "Estudio": "CESE",
+                    "nota_m": 8.0,
+                    "asist_m": 0.8,
+                    "Comentario": "Bimestre: 1.0",
+                },
+                {
+                    "n_siu": "1002",
+                    "Estudio": "CESE",
+                    "nota_m": 6.0,
+                    "asist_m": 0.6,
+                    "Comentario": "Bimestre: 1.0",
+                },
+            ]
+        )
+
+        preparador = PreparadorDatos(
+            {"actual": df_actual_test, "notas_bimestre": df_notas_test}
+        )
+        resultado = preparador.ejecutar_preparacion()
+
+        fila_baja = resultado.loc[resultado["n_siu"] == "1001"].iloc[0]
+        fila_sin_baja = resultado.loc[resultado["n_siu"] == "1002"].iloc[0]
+
+        # 1. Las columnas de baja del alumno con baja conservan su texto exacto.
+        assert fila_baja["estado_baja"] == "ABANDONÓ"
+        assert fila_baja["causa_baja"] == "Tema personal."
+
+        # 2. El alumno sin baja conserva nulos, no 0.0.
+        assert pd.isna(fila_sin_baja["estado_baja"])
+        assert pd.isna(fila_sin_baja["causa_baja"])
+
+        # 3. Las columnas de bimestre sí son numéricas.
+        assert resultado["nota_b1"].dtype == float
+        assert resultado["asist_b1"].dtype == float
+
+        # 4. Ninguna columna "Unnamed" sobrevive en la tabla maestra.
+        assert not any(
+            re.match(r"^unnamed", str(c), re.IGNORECASE) for c in resultado.columns
+        )
 
     def test_deduplicacion_sin_datos_reales_conserva_comportamiento_anterior(self):
         """Si NINGUNA fila del grupo duplicado tiene datos reales, se sigue
