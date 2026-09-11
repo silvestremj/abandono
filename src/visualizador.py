@@ -20,9 +20,12 @@ Uso en Streamlit::
 
 import io
 import os
+import re
+import shutil
 import sys
+import tempfile
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 import matplotlib.pyplot as plt
@@ -60,6 +63,145 @@ if "bimestre_corte_activo" not in st.session_state:
     # Automático). Es la fuente de verdad que consultan el resto de pestañas
     # para saber si están mirando una simulación con techo fijo o no.
     st.session_state.bimestre_corte_activo = None
+
+
+# ======================================================================
+# Validación de ficheros subidos por la interfaz web
+# ======================================================================
+# Columnas mínimas que debe traer cada fuente para que el pipeline pueda
+# procesarla. No es el esquema completo de cada fichero (ver README): es el
+# subconjunto sin el cual :class:`PreparadorDatos` fallaría o produciría una
+# tabla maestra vacía, por lo que basta para descartar un fichero con el
+# nombre correcto pero el contenido equivocado.
+COLUMNAS_MINIMAS_DATASET: Dict[str, List[str]] = {
+    "notas_bimestre": ["n_siu", "Estudio", "nota_m", "asist_m", "Comentario"],
+    "actual": ["n_siu", "estudio", "estado_actual"],
+    "inscripciones": ["n_siu", "estudio"],
+}
+
+# El número de bimestre no viaja en una columna propia: se extrae de la
+# columna de texto ``Comentario`` (p.ej. "Bimestre: 1.0"). Si ninguna fila
+# casa con este patrón, el pivotado por bimestre daría columnas vacías.
+PATRON_BIMESTRE = re.compile(r"[Bb]imestre\s*:?\s*\d+")
+
+# Subdirectorio de ``data/`` donde se archiva la versión anterior de un
+# fichero antes de sustituirlo por el que sube la persona usuaria.
+NOMBRE_DIR_BACKUP = "_backup"
+
+
+def ruta_directorio_datos(configuracion: Optional[ConfigLoader] = None) -> str:
+    """Devuelve la ruta absoluta al directorio de datos del proyecto.
+
+    Args:
+        configuracion: Instancia de :class:`ConfigLoader`. Si es ``None`` se
+            usa la instancia global ``config``.
+
+    Returns:
+        Ruta absoluta a ``config.paths["data_dir"]``, la misma carpeta que lee
+        :class:`IngestorDatos`.
+    """
+    cfg = configuracion or config
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    return os.path.join(base_dir, cfg.paths.get("data_dir", "data"))
+
+
+def nombres_admitidos(configuracion: Optional[ConfigLoader] = None) -> List[str]:
+    """Lista los nombres de fichero declarados en ``config.datasets``.
+
+    Args:
+        configuracion: Instancia de :class:`ConfigLoader`. Si es ``None`` se
+            usa la instancia global ``config``.
+
+    Returns:
+        Lista de nombres de fichero admitidos, en el orden del YAML.
+    """
+    cfg = configuracion or config
+    return [conf["nombre"] for conf in cfg.datasets.values()]
+
+
+def resolver_clave_dataset(
+    nombre_fichero: str, configuracion: Optional[ConfigLoader] = None
+) -> Optional[str]:
+    """Traduce el nombre de un fichero subido a su clave de ``config.datasets``.
+
+    El pipeline solo lee los ficheros declarados en el YAML y los busca por
+    nombre exacto, así que un fichero con cualquier otro nombre no se llegaría
+    a procesar nunca: se ignoraría en silencio.
+
+    Args:
+        nombre_fichero: Nombre del fichero subido (se compara solo el nombre
+            base, sin componentes de ruta).
+        configuracion: Instancia de :class:`ConfigLoader`. Si es ``None`` se
+            usa la instancia global ``config``.
+
+    Returns:
+        La clave del dataset (``"inscripciones"``, ``"notas_bimestre"`` o
+        ``"actual"``) o ``None`` si el nombre no está declarado.
+    """
+    cfg = configuracion or config
+    base = os.path.basename(nombre_fichero)
+    for clave, conf in cfg.datasets.items():
+        if base == conf["nombre"]:
+            return clave
+    return None
+
+
+def validar_estructura_dataset(
+    clave: str, ruta: str, configuracion: Optional[ConfigLoader] = None
+) -> Optional[str]:
+    """Comprueba que un fichero tiene la estructura esperada para su clave.
+
+    Lee el fichero con los mismos parámetros que usará luego
+    :meth:`IngestorDatos.leer_datos` (tipo, separador, encoding y detección de
+    BOM UTF-8), mediante :meth:`IngestorDatos.leer_archivo`, y verifica que
+    contiene las columnas de :data:`COLUMNAS_MINIMAS_DATASET`. Para
+    ``notas_bimestre`` exige además que ``Comentario`` traiga el número de
+    bimestre en el formato que espera la preparación.
+
+    Args:
+        clave: Clave del dataset en ``config.datasets``.
+        ruta: Ruta al fichero a validar.
+        configuracion: Instancia de :class:`ConfigLoader`. Si es ``None`` se
+            usa la instancia global ``config``.
+
+    Returns:
+        ``None`` si el fichero es válido; en caso contrario, el motivo
+        concreto del rechazo, listo para mostrar a la persona usuaria.
+    """
+    cfg = configuracion or config
+    conf = cfg.datasets.get(clave)
+    if conf is None:
+        return f"la clave '{clave}' no está declarada en config.yaml"
+
+    try:
+        df = IngestorDatos.leer_archivo(ruta, conf)
+    except Exception as exc:  # noqa: BLE001 - el motivo se muestra tal cual
+        return (
+            f"no se ha podido leer el fichero como {conf['tipo']} "
+            f"(separador {conf.get('sep', 'n/a')!r}, "
+            f"encoding {conf.get('encoding', 'n/a')!r}): {exc}"
+        )
+
+    faltantes = [
+        c for c in COLUMNAS_MINIMAS_DATASET.get(clave, []) if c not in df.columns
+    ]
+    if faltantes:
+        return (
+            "faltan columnas obligatorias: "
+            + ", ".join(faltantes)
+            + ". Columnas encontradas: "
+            + (", ".join(str(c) for c in df.columns) or "ninguna")
+        )
+
+    if clave == "notas_bimestre":
+        comentarios = df["Comentario"].dropna().astype(str)
+        if not comentarios.str.contains(PATRON_BIMESTRE, regex=True).any():
+            return (
+                "ninguna fila de la columna 'Comentario' indica el bimestre "
+                "con el formato esperado (por ejemplo 'Bimestre: 1')"
+            )
+
+    return None
 
 
 class Visualizador:
@@ -514,9 +656,150 @@ class Visualizador:
         with tab_arbol:
             self._render_arbol()
 
+    # ------------------------------------------------------------------
+    # Carga de ficheros: estado actual, respaldo y validación
+    # ------------------------------------------------------------------
+    def _lineas_estado_datasets(self) -> List[str]:
+        """Describe, para cada fichero declarado, si está en ``data/`` y desde cuándo.
+
+        Returns:
+            Lista de líneas Markdown (una por dataset declarado) con el nombre
+            admitido, su presencia en el directorio de datos y la fecha de
+            modificación del fichero presente.
+        """
+        data_dir = ruta_directorio_datos(self.config)
+        lineas: List[str] = []
+
+        for conf in self.config.datasets.values():
+            nombre = conf["nombre"]
+            ruta = os.path.join(data_dir, nombre)
+            if os.path.exists(ruta):
+                fecha = datetime.fromtimestamp(os.path.getmtime(ruta)).strftime(
+                    "%d/%m/%Y %H:%M"
+                )
+                estado = f"presente en `data/`, modificado el {fecha}"
+            else:
+                estado = "**no está** en `data/`"
+            lineas.append(f"- `{nombre}` — {estado}")
+
+        return lineas
+
+    def _respaldar_fichero(self, ruta: str, data_dir: str) -> Optional[str]:
+        """Archiva una copia del fichero actual antes de sustituirlo.
+
+        Args:
+            ruta: Ruta al fichero que va a ser sobrescrito.
+            data_dir: Directorio de datos donde vive el subdirectorio de
+                respaldos.
+
+        Returns:
+            Ruta de la copia de seguridad, o ``None`` si el fichero no existía
+            (nada que respaldar).
+        """
+        if not os.path.exists(ruta):
+            return None
+
+        dir_backup = os.path.join(data_dir, NOMBRE_DIR_BACKUP)
+        os.makedirs(dir_backup, exist_ok=True)
+
+        marca = datetime.now().strftime("%Y%m%d_%H%M%S")
+        destino = os.path.join(dir_backup, f"{os.path.basename(ruta)}.{marca}")
+        shutil.copy2(ruta, destino)
+
+        self.logger.registrar(
+            "VIZ-UI",
+            f"Respaldo de '{os.path.basename(ruta)}' en "
+            f"'{NOMBRE_DIR_BACKUP}/{os.path.basename(destino)}'",
+        )
+        return destino
+
+    def _guardar_archivos_subidos(self, archivos, data_dir: str) -> List[str]:
+        """Valida y guarda en ``data/`` los ficheros subidos por la persona usuaria.
+
+        Un fichero solo sustituye al original si (1) su nombre es uno de los
+        declarados en ``config.datasets`` y (2) su contenido supera la
+        validación de estructura. El original se respalda antes de ser
+        sustituido. Los rechazos se muestran con ``st.error`` y se registran en
+        el log; los demás ficheros del lote siguen su curso.
+
+        Args:
+            archivos: Ficheros devueltos por ``st.file_uploader``.
+            data_dir: Directorio de datos donde escribir.
+
+        Returns:
+            Lista con los nombres de los ficheros efectivamente sustituidos.
+        """
+        admitidos = nombres_admitidos(self.config)
+        rechazados_por_nombre: List[str] = []
+        aceptados: List[Tuple[str, str, Any]] = []
+
+        # 1. Filtro por nombre: lo que no está declarado no llega ni a escribirse.
+        for f in archivos:
+            # os.path.basename evita path traversal si el nombre del
+            # fichero subido contiene separadores de ruta (ej. "../").
+            nombre_seguro = os.path.basename(f.name)
+            clave = resolver_clave_dataset(nombre_seguro, self.config)
+            if clave is None:
+                rechazados_por_nombre.append(nombre_seguro)
+            else:
+                aceptados.append((clave, nombre_seguro, f))
+
+        if rechazados_por_nombre:
+            lista_recibidos = ", ".join(f"'{n}'" for n in rechazados_por_nombre)
+            lista_admitidos = ", ".join(f"'{n}'" for n in admitidos)
+            st.error(
+                f"No se han guardado {len(rechazados_por_nombre)} fichero(s) porque "
+                f"su nombre no está declarado en config.yaml: {lista_recibidos}. "
+                f"Nombres admitidos: {lista_admitidos}."
+            )
+            for nombre in rechazados_por_nombre:
+                self.logger.registrar(
+                    "VIZ-UI",
+                    f"Fichero '{nombre}' rechazado: nombre no declarado en config.yaml",
+                    "ERROR",
+                )
+
+        # 2. Validación de estructura sobre una copia temporal, para no tocar
+        #    el original hasta saber que el sustituto sirve.
+        sustituidos: List[str] = []
+        for clave, nombre, f in aceptados:
+            with tempfile.TemporaryDirectory() as dir_tmp:
+                ruta_tmp = os.path.join(dir_tmp, nombre)
+                with open(ruta_tmp, "wb") as fp:
+                    fp.write(f.getbuffer())
+
+                motivo = validar_estructura_dataset(clave, ruta_tmp, self.config)
+                if motivo is not None:
+                    st.error(f"'{nombre}' no sustituye al fichero actual: {motivo}")
+                    self.logger.registrar(
+                        "VIZ-UI", f"Fichero '{nombre}' rechazado: {motivo}", "ERROR"
+                    )
+                    continue
+
+                destino = os.path.join(data_dir, nombre)
+                self._respaldar_fichero(destino, data_dir)
+                shutil.copyfile(ruta_tmp, destino)
+
+            sustituidos.append(nombre)
+            self.logger.registrar("VIZ-UI", f"Fichero '{nombre}' actualizado en data/")
+
+        if sustituidos:
+            st.success(
+                "Ficheros actualizados en `data/`: " + ", ".join(sustituidos) + "."
+            )
+
+        return sustituidos
+
     def _render_carga(self):
         st.header("1. Cargar archivos de datos")
-        st.write("Selecciona los archivos CSV o XLSX con los datos académicos.")
+        st.write(
+            "Solo se admiten **versiones nuevas de los tres ficheros declarados "
+            "en `config.yaml`**: el pipeline los busca por su nombre exacto, así "
+            "que cualquier otro nombre se rechaza en vez de guardarse sin usarse. "
+            "Si no subes nada, los cálculos se ejecutan sobre lo que ya hay en "
+            "`data/`."
+        )
+        st.markdown("\n".join(self._lineas_estado_datasets()))
 
         archivos = st.file_uploader(
             "Seleccionar archivos",
@@ -565,18 +848,11 @@ class Visualizador:
         st.header("3. Ejecutar cálculos")
 
         if st.button("Ejecutar cálculos", type="primary"):
-            base_dir = os.path.dirname(os.path.dirname(__file__))
-            data_dir = os.path.join(base_dir, "data")
+            data_dir = ruta_directorio_datos(self.config)
             os.makedirs(data_dir, exist_ok=True)
 
             if archivos:
-                for f in archivos:
-                    # os.path.basename evita path traversal si el nombre del
-                    # fichero subido contiene separadores de ruta (ej. "../").
-                    nombre_seguro = os.path.basename(f.name)
-                    ruta = os.path.join(data_dir, nombre_seguro)
-                    with open(ruta, "wb") as fp:
-                        fp.write(f.getbuffer())
+                self._guardar_archivos_subidos(archivos, data_dir)
 
             with st.spinner("Procesando pipeline de datos..."):
                 try:

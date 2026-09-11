@@ -522,7 +522,7 @@ class EvaluadorRiesgo:
             # a una frase en lenguaje natural para el usuario no técnico.
             # Se genera para los tres niveles (también BAJO): la ruta de
             # decisión ya se resalta en el árbol para BAJO igual que para
-            # ALTO/MEDIO (TASK-APP-03), así que dejar "N/A" ahí es una
+            # ALTO/MEDIO, así que dejar "N/A" ahí es una
             # inconsistencia — el alumno también "se clasifica en riesgo BAJO
             # porque..." tiene una explicación igual de genuina y accionable
             # (confirma que el low-risk no es un valor por defecto sin más).

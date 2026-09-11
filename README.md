@@ -103,6 +103,30 @@ n_siu: "2273001"  |  Estudio: "CEIoT"
 
 Ambas combinaciones (`n_siu` + `estudio`) deben existir en los ficheros para que el cruce se realize correctamente.
 
+### Subida de ficheros desde la interfaz web
+
+El pipeline solo lee los **tres ficheros declarados en `config.yaml`**, y los busca por su **nombre exacto** dentro de `data/`. Por eso, la pestaña *Carga y ejecución* no acepta cualquier fichero: lo que sube la persona usuaria se trata siempre como una **versión nueva de uno de esos tres**, nunca como un fichero adicional.
+
+Cada fichero subido pasa por tres controles antes de sustituir al que ya está en `data/`:
+
+| Control | Qué comprueba | Si no se cumple |
+|---|---|---|
+| **Nombre declarado** | Que el nombre coincida exactamente con uno de los `datasets[*].nombre` de `config.yaml` | El fichero **no se escribe**. Se muestra un error con el nombre recibido y la lista de nombres admitidos, y se registra en el log |
+| **Estructura** | Que el fichero se pueda leer con los parámetros de su clave (tipo, separador, encoding, BOM UTF-8) y que traiga las columnas mínimas de esa fuente | **No se sustituye el original**. Se muestra el motivo concreto (qué columna falta o qué formato no cuadra) y se registra el rechazo |
+| **Respaldo** | Que no se pierda la versión anterior | Antes de sobrescribir, el fichero actual se copia a `data/_backup/<nombre>.<YYYYmmdd_HHMMSS>` y la copia se registra en el log |
+
+La validación se hace sobre una copia temporal, de modo que un fichero inválido **nunca llega a tocar** el original: el pipeline sigue ejecutándose sobre la versión buena que ya había.
+
+Columnas mínimas exigidas a cada fuente (constante `COLUMNAS_MINIMAS_DATASET` en `src/visualizador.py`):
+
+| Fichero | Columnas mínimas | Comprobación adicional |
+|---|---|---|
+| `LSE_Notas_Estadistica_Bimestre.csv` | `n_siu`, `Estudio`, `nota_m`, `asist_m`, `Comentario` | Al menos una fila de `Comentario` debe indicar el bimestre (patrón `Bimestre: <n>`), que es de donde se extrae el número de bimestre |
+| `LSE_Notas_Inscrip_Baja_Actual.xlsx` | `n_siu`, `estudio`, `estado_actual` | — |
+| `LSE_Inscrip_Baja_Recibido.csv` | `n_siu`, `estudio` | — |
+
+La cabecera de la sección *1. Cargar archivos de datos* lista los tres nombres admitidos e indica, para cada uno, si está presente en `data/` y su fecha de modificación. **Si no se sube ningún fichero, los cálculos se ejecutan sobre lo que ya haya en `data/`**, sin cambios.
+
 ## Flujo de Memoria y Tabla Maestra
 
 Los datos abandonan su formato físico (CSV/Excel) y se cargan en memoria como un diccionario de DataFrames (`datasets_dict`) que preserva la información sin alterar. Posteriormente, mediante operaciones de reestructuración tabular en Pandas, se consolida la **Tabla Maestra** (`df_master`), que es la base de todo el análisis.
@@ -185,12 +209,12 @@ Antes de entrenar los modelos, el sistema elimina automáticamente las variables
    ```
    pip install -r requirements.txt
    ```
-2. Guardar los ficheros de datos en la carpeta `data/` en la raíz del proyecto.
+2. Guardar los ficheros de datos en la carpeta `data/` en la raíz del proyecto, con los nombres exactos declarados en `config.yaml`.
 3. Ejecutar desde la terminal (en la carpeta del proyecto):
    ```
    streamlit run src/visualizador.py
    ```
-4. Se abrirá la interfaz web en el navegador. Desde allí se pueden cargar los datos, ejecutar los cálculos y visualizar los resultados.
+4. Se abrirá la interfaz web en el navegador. Desde allí se pueden subir versiones nuevas de los tres ficheros declarados (ver [Subida de ficheros desde la interfaz web](#subida-de-ficheros-desde-la-interfaz-web)), ejecutar los cálculos y visualizar los resultados. Si no se sube nada, se usa lo que ya hay en `data/`.
 5. Los resultados también se exportan a la carpeta `output/` en formato CSV.
 
 > **Nota**: El modo de ejecución puede cambiar en futuras versiones para que la persona usuaria no necesite usar la terminal.
@@ -202,7 +226,8 @@ Abandono/
 ├── data/                          # Ficheros de datos de entrada
 │   ├── LSE_Inscrip_Baja_Recibido.csv
 │   ├── LSE_Notas_Estadistica_Bimestre.csv
-│   └── LSE_Notas_Inscrip_Baja_Actual.xlsx
+│   ├── LSE_Notas_Inscrip_Baja_Actual.xlsx
+│   └── _backup/                   # Versiones anteriores, archivadas al subir una nueva
 ├── modelos/                       # Modelos entrenados guardados (.pkl)
 ├── output/                        # Resultados exportados
 ├── src/                           # Código fuente
