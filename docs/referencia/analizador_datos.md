@@ -19,5 +19,8 @@ analizador = Analizador()
 stats = analizador.calcular_estadisticas_basicas(df_master)
 
 print(stats)
-# {'columna_analizada': 'nota_b1', 'media_aritmetica': 3.45, 'total_alumnos': 646}
+# {'columnas_analizadas': ['nota_b1', 'nota_b2', 'nota_b3', 'nota_b4', 'nota_b5', 'nota_b6'],
+#  'media_aritmetica': 3.45,
+#  'medias_por_bimestre': {'nota_b1': 3.62, 'nota_b2': 3.51, ...},
+#  'total_alumnos': 646}
 ```

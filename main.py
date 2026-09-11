@@ -51,7 +51,11 @@ def main() -> None:
         # 3. Análisis descriptivo
         analista = Analizador()
         stats = analista.calcular_estadisticas_basicas(df_master)
-        log.registrar("INF_3", f"Media calculada: {stats.get('media_aritmetica')}")
+        log.registrar(
+            "INF_3",
+            "Media global de las calificaciones por bimestre: "
+            f"{stats.get('media_aritmetica')}",
+        )
 
         # 4. Preparación del dataset para ML
         df_ml = preparador.preparar_dataset_ml(df_master)
