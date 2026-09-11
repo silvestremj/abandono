@@ -91,12 +91,12 @@ def main() -> None:
                 "Saltando entrenamiento. Se usarán los modelos por hitos existentes en disco.",
             )
         # 6. Cálculo de Riesgo (Inferencia mediante modelo guardado)
-        evaluador = EvaluadorRiesgo()
+        evaluador = EvaluadorRiesgo(gestor_logs=log)
         df_final = evaluador.ejecutar_evaluacion(df_master)
         log.registrar("INF_4", "Cálculo de riesgo mediante ML finalizado")
 
         # 7. Presentación
-        vista = Visualizador()
+        vista = Visualizador(gestor_logs=log)
         vista.mostrar_en_consola(df_final)
         vista.exportar_csv(df_final)
         log.registrar("INF_5", "Resultados presentados y exportados")

@@ -621,7 +621,7 @@ class Visualizador:
             st.session_state.total_etiquetados = total_con_target
             log.registrar("VIZ", "Modelos entrenados")
 
-        evaluador = EvaluadorRiesgo()
+        evaluador = EvaluadorRiesgo(gestor_logs=log)
         df_riesgo = evaluador.ejecutar_evaluacion(df_master, bimestre_corte=bimestre_corte)
         log.registrar("VIZ", "Evaluación completada")
 
@@ -1338,5 +1338,13 @@ class Visualizador:
 
 
 if __name__ == "__main__":
-    app = Visualizador()
+    # Se construye aquí el gestor de logs con base de datos (igual que en
+    # main.py) para que todo lo que registre self.logger durante la ejecución
+    # con Streamlit quede también persistido en la tabla logs_ejecucion y no
+    # solo en consola y fichero.
+    db_app = GestorBaseDatos()
+    db_app.inicializar_tablas_fijas()
+    log_app = GestorLogs(gestor_db=db_app)
+
+    app = Visualizador(gestor_logs=log_app)
     app.generar_interfaz_web()

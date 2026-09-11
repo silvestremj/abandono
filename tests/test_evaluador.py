@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 import pandas as pd
 
 from src.evaluador_riesgo import (
@@ -5,6 +7,31 @@ from src.evaluador_riesgo import (
     EvaluadorRiesgo,
     preprocesar_fila_alumno,
 )
+from src.gestor_logs import GestorLogs
+
+
+class LoggerEspia:
+    """Doble de prueba de :class:`GestorLogs` que captura las llamadas a
+    ``registrar`` en memoria en lugar de escribir en consola, fichero y base
+    de datos."""
+
+    def __init__(self) -> None:
+        self.registros: List[Tuple[str, str, str]] = []
+
+    def registrar(self, modulo: str, mensaje: str, estado: str = "EXITO") -> None:
+        self.registros.append((modulo, mensaje, estado))
+
+
+class GestorBaseDatosEspia:
+    """Doble de prueba de :class:`GestorBaseDatos` que captura lo que un
+    :class:`GestorLogs` intentaría persistir en ``logs_ejecucion``, sin tocar
+    SQLite."""
+
+    def __init__(self) -> None:
+        self.logs: List[Tuple[str, str, str]] = []
+
+    def registrar_log(self, modulo: str, estado: str, mensaje: str) -> None:
+        self.logs.append((modulo, estado, mensaje))
 
 
 class TestEvaluadorRiesgo:
@@ -309,3 +336,63 @@ class TestEvaluadorRiesgo:
 
         assert evaluador.umbral_medio == 0.25
         assert evaluador.umbral_alto == 0.55
+
+    def test_sin_modelo_registra_error_y_justifica_el_no_calculable(self, tmp_path):
+        """Un alumno PRONÓSTICO cuyo hito no tiene modelo entrenado no debe
+        descartarse en silencio: antes el bucle hacía "continue" sin registrar
+        nada y el alumno se quedaba en NO_CALCULABLE con justificación "N/A",
+        indistinguible para quien audita de un fallo del pipeline. Ahora debe
+        quedar constancia en el logger y en el propio resultado."""
+        logger_falso = LoggerEspia()
+        # model_dir vacío: no existe arbol_b1.pkl ni columnas_b1.pkl
+        evaluador = EvaluadorRiesgo(
+            model_dir=str(tmp_path),
+            gestor_logs=logger_falso,  # type: ignore[arg-type]
+        )
+
+        df_test = pd.DataFrame(
+            [
+                {
+                    "n_siu": "E9999",
+                    "estado_actual": "En curso",
+                    "nota_b1": 5.0,
+                    "asist_b1": 0.60,
+                }
+            ]
+        )
+
+        resultado = evaluador.ejecutar_evaluacion(df_test)
+
+        assert resultado.loc[0, "nivel_riesgo"] == "NO_CALCULABLE"
+        # 1. Deja constancia en el resultado, no solo el nivel por defecto
+        justificacion = str(resultado.loc[0, "justificacion_riesgo"])
+        assert justificacion != "N/A"
+        assert justificacion.strip() != ""
+        assert "Bimestre 1" in justificacion
+        assert resultado.loc[0, "bimestre_evaluado"] == 1
+
+        # 2. Deja constancia en la trazabilidad, con nivel ERROR
+        errores = [r for r in logger_falso.registros if r[2] == "ERROR"]
+        assert errores, "El fallo debe registrarse como ERROR, no descartarse"
+        assert any(
+            "E9999" in mensaje and "Bimestre 1" in mensaje for _, mensaje, _ in errores
+        )
+
+        # 3. Y un resumen final con el desglose por motivo
+        assert any(
+            "NO_CALCULABLE" in mensaje and "sin_modelo_bimestre" in mensaje
+            for _, mensaje, _ in logger_falso.registros
+        )
+
+    def test_gestor_logs_con_db_persiste_los_registros(self):
+        """PROBLEMA 1: GestorLogs.registrar() solo persiste en la tabla
+        logs_ejecucion si la instancia se construyó con gestor_db. Este test
+        fija ese contrato con un doble de prueba, para que la regresión
+        (instanciar el logger sin base de datos y perder la auditoría) se
+        detecte aquí."""
+        db_falsa = GestorBaseDatosEspia()
+        log = GestorLogs(gestor_db=db_falsa)  # type: ignore[arg-type]
+
+        log.registrar("EVALUADOR", "Mensaje de prueba", "ERROR")
+
+        assert db_falsa.logs == [("EVALUADOR", "ERROR", "Mensaje de prueba")]

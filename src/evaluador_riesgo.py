@@ -71,6 +71,7 @@ ETIQUETAS_VARIABLES_CATEGORICAS: Dict[str, str] = {
 def preprocesar_fila_alumno(
     fila: pd.Series,
     columnas_entrenamiento: list,
+    gestor_logs: Optional[GestorLogs] = None,
 ) -> Optional[pd.DataFrame]:
     """Preprocesa una fila individual de alumno para obtener el vector de
     características listo para inferencia con el modelo.
@@ -84,6 +85,11 @@ def preprocesar_fila_alumno(
             DataFrame **master**).
         columnas_entrenamiento: Lista de nombres de columnas que espera el
             modelo entrenado (cargadas desde ``columnas_b*.pkl``).
+        gestor_logs: Instancia opcional de :class:`GestorLogs`. Si se recibe,
+            un fallo de preprocesado deja constancia del tipo y el mensaje de
+            la excepción original en lugar de descartarse en silencio. Va al
+            final y con valor por defecto para no romper a los llamadores que
+            no disponen de un logger.
 
     Returns:
         DataFrame de una sola fila listo para ``model.predict_proba`` o
@@ -124,7 +130,20 @@ def preprocesar_fila_alumno(
 
         return df_ml[columnas_entrenamiento]
 
-    except Exception:
+    except Exception as error:
+        if gestor_logs is not None:
+            identificador_fila = getattr(fila, "name", None)
+            referencia_fila = (
+                f" (fila {identificador_fila})"
+                if identificador_fila is not None
+                else ""
+            )
+            gestor_logs.registrar(
+                "EVALUADOR",
+                f"Error al preprocesar la fila del alumno{referencia_fila}: "
+                f"{type(error).__name__}: {error}",
+                "ERROR",
+            )
         return None
 
 
@@ -409,12 +428,16 @@ class EvaluadorRiesgo:
             ``probabilidad_abandono``, ``nivel_riesgo`` (``ALTO``, ``MEDIO``,
             ``BAJO``, ``SIN_DATOS_SUFICIENTES`` o ``NO_CALCULABLE``),
             ``justificacion_riesgo`` (generada en lenguaje natural para los
-            tres niveles de riesgo y también para ``SIN_DATOS_SUFICIENTES``;
-            queda en ``"N/A"`` solo para quien no llega a evaluarse),
+            tres niveles de riesgo, para ``SIN_DATOS_SUFICIENTES`` y también
+            para los alumnos PRONÓSTICO que quedan ``NO_CALCULABLE`` por
+            falta de modelo del hito o por un fallo de preprocesado, donde
+            explica cuál de los dos motivos ha sido; queda en ``"N/A"`` solo
+            para quien nunca entra a evaluarse, es decir HISTÓRICO y SIN
+            REGISTRO),
             ``bimestre_evaluado`` (bimestre realmente usado para evaluar a
             cada alumno PRONÓSTICO, incluidos los marcados
-            ``SIN_DATOS_SUFICIENTES``; entero nulo para los que no se
-            evalúan).
+            ``SIN_DATOS_SUFICIENTES`` y los ``NO_CALCULABLE`` que sí llegaron
+            a detectar hito; entero nulo para los que no se evalúan).
         """
         df_riesgo = df.copy()
 
@@ -467,9 +490,20 @@ class EvaluadorRiesgo:
         else:
             df_deteccion = df_evaluar
 
+        # Contadores de trazabilidad: permiten cerrar el bucle con un resumen
+        # auditable de cuántos alumnos llegaron realmente al modelo y por qué
+        # motivo concreto se quedó fuera cada uno de los demás.
+        total_con_modelo = 0
+        total_sin_datos = 0
+        motivos_no_calculable: Dict[str, int] = {
+            "sin_modelo_bimestre": 0,
+            "preprocesado_fallido": 0,
+        }
+
         # 2. Inferencia individualizada por hito temporal
         for idx in df_evaluar.index:
             fila_original = df_evaluar.loc[idx]
+            id_alumno = fila_original.get("n_siu", idx)
 
             # Detectar en qué hito temporal (bimestre) se encuentra este alumno concreto
             # (recortado al techo bimestre_corte si se indicó uno)
@@ -489,19 +523,55 @@ class EvaluadorRiesgo:
                     f"registrados hasta el Bimestre {b_alumno}; no se puede "
                     "evaluar el riesgo de forma fiable todavía."
                 )
+                total_sin_datos += 1
                 continue
 
             # Recuperar el modelo adaptado a su realidad temporal
             modelo_b, columnas_b = self._obtener_modelo_bimestre(b_alumno)
 
             if modelo_b is None or columnas_b is None:
-                # Si el modelo de ese hito no existe, dejamos al alumno como no calculable por seguridad
+                # Si el modelo de ese hito no existe, dejamos al alumno como no
+                # calculable por seguridad, pero dejando constancia del motivo:
+                # un NO_CALCULABLE silencioso es indistinguible de un fallo del
+                # pipeline para quien audita los resultados después.
+                self.logger.registrar(
+                    "EVALUADOR",
+                    f"No existe el modelo entrenado o el fichero de columnas "
+                    f"del Bimestre {b_alumno} (alumno {id_alumno}); no se "
+                    "puede calcular su riesgo.",
+                    "ERROR",
+                )
+                df_riesgo.loc[idx, "bimestre_evaluado"] = b_alumno
+                df_riesgo.loc[idx, "justificacion_riesgo"] = (
+                    f"[Hito B{b_alumno}] No hay ningún modelo entrenado para "
+                    f"el Bimestre {b_alumno}, así que no se ha podido calcular "
+                    "el riesgo de este alumno."
+                )
+                motivos_no_calculable["sin_modelo_bimestre"] += 1
                 continue
 
             # Preprocesar la fila del alumno alineándola al esquema del modelo del bimestre actual
-            X_inferencia = preprocesar_fila_alumno(fila_original, columnas_b)
+            X_inferencia = preprocesar_fila_alumno(
+                fila_original, columnas_b, self.logger
+            )
             if X_inferencia is None:
+                self.logger.registrar(
+                    "EVALUADOR",
+                    f"No se ha podido preparar el vector de características "
+                    f"del alumno {id_alumno} para el Bimestre {b_alumno}; "
+                    "queda como NO_CALCULABLE.",
+                    "ERROR",
+                )
+                df_riesgo.loc[idx, "bimestre_evaluado"] = b_alumno
+                df_riesgo.loc[idx, "justificacion_riesgo"] = (
+                    f"[Hito B{b_alumno}] No se han podido preparar los datos "
+                    f"de este alumno para el modelo del Bimestre {b_alumno}, "
+                    "así que no se ha podido calcular su riesgo."
+                )
+                motivos_no_calculable["preprocesado_fallido"] += 1
                 continue
+
+            total_con_modelo += 1
 
             # Calcular probabilidad (Clase 1 = Abandono)
             prob = float(modelo_b.predict_proba(X_inferencia)[0, 1])
@@ -535,5 +605,21 @@ class EvaluadorRiesgo:
             df_riesgo.loc[idx, "justificacion_riesgo"] = (
                 f"[Hito B{b_alumno}] {justificacion}"
             )
+
+        # Resumen final de la evaluación: deja en la auditoría el reparto real
+        # de los alumnos PRONÓSTICO entre inferencia efectiva, falta de datos y
+        # fallos, con el desglose por motivo de estos últimos.
+        total_no_calculable = sum(motivos_no_calculable.values())
+        desglose = ", ".join(
+            f"{motivo}: {cuenta}" for motivo, cuenta in motivos_no_calculable.items()
+        )
+        self.logger.registrar(
+            "EVALUADOR",
+            f"Evaluación finalizada sobre {len(df_evaluar)} alumnos PRONÓSTICO: "
+            f"{total_con_modelo} evaluados con modelo, "
+            f"{total_sin_datos} SIN_DATOS_SUFICIENTES, "
+            f"{total_no_calculable} NO_CALCULABLE ({desglose}).",
+            "ERROR" if total_no_calculable else "EXITO",
+        )
 
         return df_riesgo
