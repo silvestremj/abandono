@@ -79,6 +79,17 @@ COLUMNAS_MINIMAS_DATASET: Dict[str, List[str]] = {
     "inscripciones": ["n_siu", "estudio"],
 }
 
+# Claves cuyos nombres de columna normaliza la preparación antes de usarlos.
+# :meth:`src.preparador_datos.PreparadorDatos.ejecutar_preparacion` empieza
+# haciendo ``c.lower().strip()`` sobre las columnas del Excel "actual", así que
+# ese fichero funciona igual de bien con "Estudio" que con "estudio". El
+# validador comparaba contra los nombres crudos y rechazaba por "columnas
+# obligatorias faltantes" un fichero que el pipeline habría procesado sin
+# problema. Las otras dos claves sí se leen con su capitalización literal
+# (``df_notas["Comentario"]``, ``rename({"Estudio": ...})``), de modo que ahí la
+# comparación estricta refleja lo que de verdad exige el código.
+CLAVES_CON_COLUMNAS_NORMALIZADAS = {"actual"}
+
 # El número de bimestre no viaja en una columna propia: se extrae de la
 # columna de texto ``Comentario`` (p.ej. "Bimestre: 1.0"). Si ninguna fila
 # casa con este patrón, el pivotado por bimestre daría columnas vacías.
@@ -182,9 +193,17 @@ def validar_estructura_dataset(
             f"encoding {conf.get('encoding', 'n/a')!r}): {exc}"
         )
 
-    faltantes = [
-        c for c in COLUMNAS_MINIMAS_DATASET.get(clave, []) if c not in df.columns
-    ]
+    if clave in CLAVES_CON_COLUMNAS_NORMALIZADAS:
+        presentes = {str(c).lower().strip() for c in df.columns}
+        faltantes = [
+            c
+            for c in COLUMNAS_MINIMAS_DATASET.get(clave, [])
+            if c.lower().strip() not in presentes
+        ]
+    else:
+        faltantes = [
+            c for c in COLUMNAS_MINIMAS_DATASET.get(clave, []) if c not in df.columns
+        ]
     if faltantes:
         return (
             "faltan columnas obligatorias: "
@@ -234,18 +253,48 @@ class Visualizador:
     def mostrar_en_consola(self, df_riesgo: pd.DataFrame) -> None:
         """Muestra un reporte de texto en la consola con el conteo por nivel de riesgo.
 
+        El reparto por nivel se calcula **solo sobre los alumnos PRONÓSTICO**,
+        que son los únicos que llegan a evaluarse. Antes se contaba sobre toda
+        la tabla maestra, de modo que los alumnos HISTÓRICO (desenlace ya
+        conocido) y SIN REGISTRO (sin estado declarado) engrosaban el recuento
+        de ``NO_CALCULABLE`` — su valor por defecto — y el reporte anunciaba
+        cientos de "no calculables" que en realidad nunca debían evaluarse.
+        Eso contradecía la pestaña "Resultados" de la interfaz web, que sí
+        filtra por ``tipo_prediccion``. Los no evaluados se siguen mostrando,
+        pero en un bloque aparte y con su motivo.
+
         Args:
-            df_riesgo: DataFrame con la columna ``nivel_riesgo``.
+            df_riesgo: DataFrame con las columnas ``nivel_riesgo`` y
+                ``tipo_prediccion``.
         """
         if df_riesgo.empty:
             print("No hay datos para mostrar.")
             return
+
+        total = len(df_riesgo)
+        if "tipo_prediccion" in df_riesgo.columns:
+            tipos = df_riesgo["tipo_prediccion"]
+            df_pronostico = df_riesgo[tipos == "PRONÓSTICO"]
+            n_historico = int((tipos == "HISTÓRICO").sum())
+            n_sin_registro = int((tipos == "SIN REGISTRO").sum())
+        else:
+            df_pronostico = df_riesgo
+            n_historico = 0
+            n_sin_registro = 0
+
         print("\n" + "=" * 60)
         print("  REPORTE DE RIESGO DE ABANDONO ACADÉMICO")
         print("=" * 60)
-        conteo = df_riesgo["nivel_riesgo"].value_counts()
+        print(f"  Alumnos evaluados (PRONÓSTICO): {len(df_pronostico)} de {total}")
+        print("-" * 60)
+        conteo = df_pronostico["nivel_riesgo"].value_counts()
         for nivel in ["ALTO", "MEDIO", "BAJO", "SIN_DATOS_SUFICIENTES", "NO_CALCULABLE"]:
             print(f"  {nivel}: {conteo.get(nivel, 0)}")
+        print("-" * 60)
+        print("  No evaluados:")
+        print(f"    HISTÓRICO (desenlace ya conocido): {n_historico}")
+        print(f"    SIN REGISTRO (sin estado declarado): {n_sin_registro}")
+        print("=" * 60)
 
     def exportar_csv(self, df_riesgo: pd.DataFrame) -> Optional[str]:
         """Exporta el DataFrame de riesgos a un archivo CSV con timestamp.
@@ -258,13 +307,21 @@ class Visualizador:
         """
         if df_riesgo.empty:
             return None
-        ts = datetime.now().strftime("%Y%m%d_%H%M")
+        # Marca de tiempo hasta el segundo: con precisión de minuto, dos
+        # ejecuciones seguidas (lo normal al probar la herramienta) escribían
+        # el mismo nombre de fichero y la segunda pisaba a la primera.
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         nombre = f"resultado_riesgos_{ts}.csv"
         out_dir = self.config.paths.get("output_dir", "output")
         base = os.path.dirname(os.path.dirname(__file__))
         ruta = os.path.join(base, out_dir, nombre)
         os.makedirs(os.path.dirname(ruta), exist_ok=True)
-        df_riesgo.to_csv(ruta, index=False, sep=";", decimal=",")
+        # encoding='utf-8-sig': el BOM es lo que hace que Excel en Windows
+        # reconozca el fichero como UTF-8. Sin él lo abre con la codificación
+        # ANSI del sistema y destroza todas las tildes del reporte
+        # ("justificación", "PRONÓSTICO", "Córdoba"). Va en la misma línea que
+        # sep=';' y decimal=',': el destino natural de este CSV es Excel.
+        df_riesgo.to_csv(ruta, index=False, sep=";", decimal=",", encoding="utf-8-sig")
         return ruta
 
     # ======================================================================
@@ -312,6 +369,14 @@ class Visualizador:
         impurity = tree_.impurity
         value = tree_.value
         n_samples = tree_.n_node_samples
+        # Desde scikit-learn 1.3, 'tree_.value' guarda la distribución de
+        # clases YA NORMALIZADA (suma 1 en cada nodo), no los conteos. Pintarla
+        # tal cual mostraba "value = [0.5, 0.5]" en la raíz, que cualquiera lee
+        # como si fueran muestras. Se deshace la normalización igual que hace
+        # el propio 'sklearn.tree.plot_tree' (ver sklearn/tree/_export.py), para
+        # que el árbol de la interfaz muestre lo mismo que la herramienta
+        # estándar: conteos ponderados por 'class_weight="balanced"'.
+        n_samples_ponderadas = tree_.weighted_n_node_samples
 
         # 1. Recolectar nodos visibles (dentro de max_depth)
         visible = []  # (node_id, depth)
@@ -405,6 +470,10 @@ class Visualizador:
                 )
 
         # 5. Dibujar nodos
+        def _distribucion(nid):
+            """Conteos ponderados por clase del nodo (deshace la normalización)."""
+            return value[nid][0] * n_samples_ponderadas[nid]
+
         def _clase_predicha(nid):
             v = value[nid][0]
             return 0 if v[0] >= v[1] else 1
@@ -445,7 +514,7 @@ class Visualizador:
 
             lines.append(f"gini = {impurity[nid]:.3f}")
             lines.append(f"samples = {int(n_samples[nid])}")
-            v = value[nid][0]
+            v = _distribucion(nid)
             lines.append(f"value = [{v[0]:.1f}, {v[1]:.1f}]")
             lines.append(
                 f"class = {['Continua', 'Abandono'][_clase_predicha(nid)]}"
@@ -620,6 +689,23 @@ class Visualizador:
             total_con_target = int(df_ml["target_ml"].dropna().shape[0])
             st.session_state.total_etiquetados = total_con_target
             log.registrar("VIZ", "Modelos entrenados")
+        else:
+            # Sin este aviso, subir ficheros nuevos con
+            # 'forzar_entrenamiento: false' evaluaba los datos recién subidos
+            # con los modelos antiguos del disco y sin ningún síntoma visible:
+            # preprocesar_fila_alumno alinea la fila al esquema de columnas
+            # guardado, así que no hay error, solo resultados desactualizados.
+            st.warning(
+                "No se han reentrenado los modelos: ya existen en `modelos/` y "
+                "`forzar_entrenamiento` está desactivado en `config.yaml`. Los "
+                "resultados se han calculado con los modelos guardados en "
+                "disco, que pueden no corresponder a los datos actuales. Pon "
+                "`forzar_entrenamiento: true` para reentrenar."
+            )
+            log.registrar(
+                "VIZ",
+                "Entrenamiento omitido: se reutilizan los modelos existentes en disco",
+            )
 
         evaluador = EvaluadorRiesgo(gestor_logs=log)
         df_riesgo = evaluador.ejecutar_evaluacion(df_master, bimestre_corte=bimestre_corte)
@@ -1065,7 +1151,9 @@ class Visualizador:
                     f"**Justificación:** {alumno.get('justificacion_riesgo', 'N/A')}"
                 )
 
-        csv = alumnos.to_csv(index=False, sep=";", decimal=",").encode("utf-8")
+        # utf-8-sig por el mismo motivo que en exportar_csv: sin BOM, Excel
+        # abre el CSV descargado como ANSI y rompe todas las tildes.
+        csv = alumnos.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
         st.download_button(
             f"Descargar riesgo {nivel.lower()} (CSV)",
             csv,
@@ -1187,11 +1275,21 @@ class Visualizador:
                 & (df_riesgo.get("nivel_riesgo", "").isin(["ALTO", "MEDIO", "BAJO"]))
             ]
             if not alumnos_pronostico.empty:
+                # El valor de cada opción es el ÍNDICE de la fila, no el
+                # n_siu: la clave real de la tabla maestra es (n_siu,
+                # estudio) y hay alumnos matriculados en más de un programa,
+                # así que filtrar por n_siu podía devolver varias filas y
+                # iloc[0] acababa pintando la ruta del otro programa —
+                # con su bimestre y su nivel de riesgo— bajo la etiqueta
+                # del alumno elegido. El índice identifica una única fila.
                 opciones = [("", "— Sin alumno específico —")]
-                for _, row in alumnos_pronostico.iterrows():
+                indice_por_opcion = {}
+                for idx, row in alumnos_pronostico.iterrows():
                     riesgo_row = row.get("nivel_riesgo", "?")
                     label = f"{row.get('n_siu', '?')} — {row.get('estudio', '?')} ({riesgo_row})"
-                    opciones.append((str(row.get("n_siu", "")), label))
+                    clave_opcion = str(idx)
+                    indice_por_opcion[clave_opcion] = idx
+                    opciones.append((clave_opcion, label))
 
                 selected = st.selectbox(
                     "Resaltar ruta de un alumno (opcional)",
@@ -1202,12 +1300,14 @@ class Visualizador:
                 )
 
                 if selected:
-                    alumno_seleccionado = selected
-                    fila_bruta = df_riesgo[
-                        (df_riesgo["n_siu"].astype(str) == str(selected))
-                        & (df_riesgo.get("tipo_prediccion", "") == "PRONÓSTICO")
-                    ]
+                    fila_bruta = df_riesgo.loc[[indice_por_opcion[selected]]]
                     if not fila_bruta.empty:
+                        # Etiqueta con n_siu y estudio: el n_siu por sí solo
+                        # no distingue a un alumno de dos programas.
+                        alumno_seleccionado = (
+                            f"{fila_bruta.iloc[0].get('n_siu', '?')} "
+                            f"({fila_bruta.iloc[0].get('estudio', '?')})"
+                        )
                         # Usar la misma lógica que el filtro para obtener el riesgo
                         riesgo_raw = fila_bruta.iloc[0]["nivel_riesgo"]
                         riesgo_str = str(riesgo_raw).strip().upper() if pd.notna(riesgo_raw) else ""
@@ -1318,11 +1418,15 @@ class Visualizador:
         # descargas del usuario), sin escribir nada en el servidor — reutiliza
         # la MISMA figura que está en pantalla, nunca regenera un árbol
         # distinto para el archivo descargado.
-        nombre_archivo = (
-            f"arbol_{alumno_seleccionado}_b{bimestre}.png"
-            if alumno_seleccionado
-            else f"arbol_b{bimestre}.png"
-        )
+        if alumno_seleccionado:
+            # La etiqueta del alumno lleva espacios y paréntesis ("E1712
+            # (CESE)"); se reduce a caracteres válidos para un nombre de
+            # fichero conservando la pareja n_siu + estudio, que es lo que
+            # identifica de forma única la ruta representada.
+            etiqueta_archivo = re.sub(r"[^A-Za-z0-9_-]+", "_", alumno_seleccionado)
+            nombre_archivo = f"arbol_{etiqueta_archivo.strip('_')}_b{bimestre}.png"
+        else:
+            nombre_archivo = f"arbol_b{bimestre}.png"
         buffer_png = io.BytesIO()
         fig.savefig(buffer_png, format="png", dpi=150, bbox_inches="tight")
         buffer_png.seek(0)

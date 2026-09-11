@@ -14,12 +14,35 @@ Uso::
     df_ml = preparador.preparar_dataset_ml(df_master)
 """
 
+import re
 from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 
 from src.config import config
+
+# ======================================================================
+# Patron anclado de las columnas temporales por bimestre ("nota_b1",
+# "asist_b2", ...). Es la fuente unica de verdad sobre que columnas son
+# bimestrales: la usan tanto el tratamiento de nulos/tipos de
+# :meth:`PreparadorDatos.ejecutar_preparacion` como el recorte temporal de
+# :meth:`PreparadorDatos.filtrar_columnas_por_bimestre`.
+#
+# El anclaje es imprescindible: detectarlas por subcadena ("_b" in col)
+# tambien casaba con "fecha_baja", "estado_baja", "causa_baja" y
+# "comentario_baja", que acababan convertidas a 0.0 por el relleno de nulos
+# y la coercion numerica posteriores -- destruyendo en silencio el motivo
+# documentado de cada baja tanto en la tabla maestra como en SQLite y en el
+# CSV exportado.
+# ======================================================================
+PATRON_COLUMNA_BIMESTRE = re.compile(r"^(nota|asist)_b(\d+)$")
+
+# Columnas sin cabecera del Excel de origen. pandas las nombra "Unnamed: N" y
+# no contienen mas que restos de formato de la hoja de calculo. Ya estaban
+# excluidas del modelo, pero seguian llegando a la tabla maestra, a SQLite y al
+# CSV que recibe el usuario final como columnas vacias sin significado.
+PATRON_COLUMNA_SIN_CABECERA = re.compile(r"^unnamed:\s*\d+$")
 
 # ======================================================================
 # Columnas no predictivas o con fuga de datos ("data leakage") que deben
@@ -137,6 +160,14 @@ class PreparadorDatos:
         # Se normalizan los nombres de columna por si el Excel varía.
         df_base.columns = [c.lower().strip() for c in df_base.columns]
 
+        # Se descartan de entrada las columnas sin cabecera del Excel: no
+        # aportan nada y solo ensucian la tabla maestra y el CSV exportado.
+        columnas_basura = [
+            c for c in df_base.columns if PATRON_COLUMNA_SIN_CABECERA.match(str(c))
+        ]
+        if columnas_basura:
+            df_base = df_base.drop(columns=columnas_basura)
+
         df_base["n_siu"] = self._normalizar(df_base, "n_siu")
         df_base["estudio"] = self._normalizar(df_base, "estudio")
 
@@ -232,9 +263,14 @@ class PreparadorDatos:
 
         # Tratamiento de nulos
         # --------------------------------------------------------------
-        # Identifica las columnas que corresponden a los bimestres (contienen "_b")
-        # Ejemplo: "nota_b1", "asist_b2".
-        cols_bimestres = [c for c in tabla_maestra.columns if "_b" in str(c)]
+        # Identifica las columnas de bimestre ("nota_b1", "asist_b2", ...)
+        # con el patron anclado del modulo, NO por subcadena: "_b" tambien
+        # aparece en "fecha_baja", "estado_baja", "causa_baja" y
+        # "comentario_baja", que no son numericas y no deben rellenarse ni
+        # coercionarse.
+        cols_bimestres = [
+            c for c in tabla_maestra.columns if PATRON_COLUMNA_BIMESTRE.match(str(c))
+        ]
 
         # Rellenar los nulos (NaN) de esas columnas con 0, asumiendo que la ausencia de nota o asistencia implica 0.
         tabla_maestra[cols_bimestres] = tabla_maestra[cols_bimestres].fillna(0.0)
@@ -384,17 +420,14 @@ class PreparadorDatos:
         Returns:
             pd.DataFrame: Un nuevo DataFrame sin los bimestres futuros.
         """
-        import re
-
         df_filtrado = df.copy()
 
         # Detectar todas las columnas que siguen el patrón nota_b{N} o asist_b{N}
         # y eliminar aquellas con N > bimestre_corte (funciona para cualquier N)
         columnas_a_eliminar = []
-        patron = re.compile(r"^(nota|asist)_b(\d+)$")
 
         for col in df_filtrado.columns:
-            m = patron.match(str(col))
+            m = PATRON_COLUMNA_BIMESTRE.match(str(col))
             if m and int(m.group(2)) > bimestre_corte:
                 columnas_a_eliminar.append(col)
 

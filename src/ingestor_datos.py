@@ -13,7 +13,7 @@ Uso::
 """
 
 import os
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -104,10 +104,24 @@ class IngestorDatos:
     def leer_datos(self) -> Dict[str, pd.DataFrame]:
         """Lee todos los archivos definidos en ``config.datasets``.
 
+        Si falta alguno, se interrumpe la ingesta con un error que nombra los
+        ficheros que faltan y la carpeta donde se esperaban. Antes solo se
+        imprimía un aviso y se devolvía el diccionario incompleto, con lo que
+        el fallo real llegaba mucho más tarde y de forma incomprensible: la
+        preparación reventaba con ``KeyError: 'actual'`` y el usuario leía
+        ``Error crítico en la ejecución: 'actual'``. Es un caso habitual —
+        la carpeta ``data/`` no se versiona, así que un clon recién
+        descargado del repositorio lo reproduce siempre.
+
         Returns:
             Diccionario ``{clave: DataFrame}`` con los datos cargados.
+
+        Raises:
+            FileNotFoundError: Si falta alguno de los ficheros declarados en
+                ``config.datasets``.
         """
         archivos: Dict[str, Dict[str, str]] = config.datasets
+        faltantes: List[str] = []
 
         for clave, conf in archivos.items():
             path: str = os.path.join(self.ruta, conf["nombre"])
@@ -117,9 +131,16 @@ class IngestorDatos:
                 if conf["tipo"] in ("csv", "excel"):
                     self.datasets[clave] = self.leer_archivo(path, conf)
             else:
-                print(f" Error: No se encuentra el archivo en {path}")
-                print(
-                    "   Por favor, verifica que el archivo esté en la carpeta 'data' con el nombre exacto."
-                )
+                faltantes.append(conf["nombre"])
+
+        if faltantes:
+            listado = "\n".join(f"  - {n}" for n in faltantes)
+            raise FileNotFoundError(
+                f"Faltan {len(faltantes)} fichero(s) de datos en '{self.ruta}':\n"
+                f"{listado}\n"
+                "Copia esos ficheros en esa carpeta con el nombre exacto que "
+                "declara config.yaml (se distinguen mayúsculas y minúsculas) y "
+                "vuelve a ejecutar."
+            )
 
         return self.datasets
