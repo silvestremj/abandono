@@ -48,10 +48,10 @@ class GestorLogs:
         log_path: str = os.path.join(self.log_dir, f"ejecucion_{fecha_archivo}.log")
 
         # 3. Configurar el logger nativo de Python
-        self.logger = logging.getLogger("TFM_Logger")
+        self.logger = logging.getLogger("abandono")
         self.logger.setLevel(logging.INFO)
 
-        # Evitamos duplicar handlers si la clase se instancia varias veces
+        # Se evita duplicar handlers si la clase se instancia varias veces.
         if not self.logger.handlers:
             file_handler = logging.FileHandler(log_path, encoding="utf-8")
             # Formato estándar de la industria para el interior del fichero de texto
@@ -62,7 +62,7 @@ class GestorLogs:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
-        # Imprimimos en consola y guardamos en el fichero el inicio de sesión
+        # Se registra el inicio de sesión en consola y en el fichero.
         print(f"--- Inicio de Sesión: {self.sesion} ---")
         self.logger.info(f"--- Inicio de Sesión: {self.sesion} ---")
 

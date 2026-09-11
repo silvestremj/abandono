@@ -17,9 +17,9 @@ PESTANAS_ESPERADAS = [
 
 
 class TestVisualizadorAppTest:
-    """Pruebas de la interfaz Streamlit con streamlit.testing.v1.AppTest
-    (Espiral 4): validan que la app real -- no una réplica de su lógica --
-    arranca y responde a interacción sin lanzar excepciones."""
+    """Pruebas de la interfaz Streamlit con streamlit.testing.v1.AppTest:
+    validan que la app real -- no una réplica de su lógica -- arranca y
+    responde a interacción sin lanzar excepciones."""
 
     def test_arranca_sin_excepciones_y_renderiza_las_cuatro_pestanas(self):
         """La app debe cargar sin ninguna excepción no controlada y mostrar

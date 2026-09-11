@@ -1219,15 +1219,14 @@ class Visualizador:
                         )
 
         # ======================================================================
-        # TASK-APP-03 (corrección de coherencia): se renderiza SIEMPRE un único
-        # árbol, en vivo (sin botón), para que el mensaje mostrado y el árbol
-        # en pantalla nunca puedan desincronizarse. Antes existían dos árboles
-        # (uno "oficial" automático y otro exploratorio tras pulsar un botón)
-        # que podían quedar visualmente contradictorios entre sí; ahora solo
-        # hay un punto de renderizado. El panel de justificación/métricas solo
-        # se muestra cuando ESE árbol es, además, la evaluación oficial del
-        # alumno (mismo bimestre), para no describir un hito que no es el que
-        # se ve en pantalla.
+        # Coherencia de la vista: se renderiza SIEMPRE un único árbol, en vivo
+        # (sin botón), para que el mensaje mostrado y el árbol en pantalla no
+        # puedan desincronizarse. Un único punto de renderizado evita que
+        # convivan en pantalla una evaluación automática y otra exploratoria
+        # con resultados visualmente contradictorios. El panel de
+        # justificación/métricas solo se muestra cuando ESE árbol es, además,
+        # la evaluación oficial del alumno (mismo bimestre), para no describir
+        # un hito que no es el que se ve en pantalla.
         # ======================================================================
         base_dir = os.path.dirname(os.path.dirname(__file__))
         fila_alumno_preprocesada = None

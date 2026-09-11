@@ -35,7 +35,7 @@ class GestorBaseDatosEspia:
 
 
 class TestEvaluadorRiesgo:
-    """Batería de tests unitarios adaptada al motor de Machine Learning (Espiral 3)."""
+    """Batería de tests unitarios del motor de Machine Learning."""
 
     def setup_method(self):
         """Se ejecuta antes de cada test. Prepara el entorno."""
@@ -59,7 +59,7 @@ class TestEvaluadorRiesgo:
 
     def test_inferencia_alumno_en_curso_b1(self):
         """Verifica que un alumno activo sea evaluado y reciba una justificación con prefijo de hito."""
-        # Creamos un alumno "En curso" que solo tiene datos del Bimestre 1
+        # Alumno "En curso" que solo tiene datos del Bimestre 1.
         df_test = pd.DataFrame(
             [
                 {
@@ -84,11 +84,11 @@ class TestEvaluadorRiesgo:
         # 3. Todo alumno evaluado lleva justificación con la etiqueta del hito
         # detectado [Hito B1] -- también si su nivel es BAJO (ver
         # test_justificacion_se_genera_tambien_para_riesgo_bajo).
-        # Forzamos el casting a str para que Pylance reconozca el método startswith
+        # Se fuerza el casting a str para que Pylance reconozca el método startswith
         justificacion = str(resultado.loc[0, "justificacion_riesgo"])
         assert justificacion.startswith("[Hito B1]")
         # 4. La justificación debe ser una frase en lenguaje natural,
-        # no la salida técnica cruda del árbol de decisión (TASK-APP-02)
+        # no la salida técnica cruda del árbol de decisión.
         assert " <= " not in justificacion
         assert " > " not in justificacion
         assert " AND " not in justificacion
@@ -97,7 +97,7 @@ class TestEvaluadorRiesgo:
     def test_justificacion_se_genera_tambien_para_riesgo_bajo(self):
         """Un alumno de riesgo BAJO también recibe justificación en lenguaje
         natural: dejar "N/A" ahí era una inconsistencia (el árbol ya resalta
-        su ruta coloreada igual que para ALTO/MEDIO, TASK-APP-03)."""
+        su ruta coloreada igual que para ALTO/MEDIO)."""
         df_test = pd.DataFrame(
             [
                 {
@@ -191,7 +191,7 @@ class TestEvaluadorRiesgo:
         assert resultado.loc[0, "bimestre_evaluado"] == 1
 
         # Conserva el comportamiento ya existente: justificación en lenguaje
-        # natural con el prefijo de hito, no "N/A" (TASK-APP-02/03).
+        # natural con el prefijo de hito, no "N/A".
         justificacion = str(resultado.loc[0, "justificacion_riesgo"])
         assert justificacion != "N/A"
         assert justificacion.startswith("[Hito B1]")
@@ -235,8 +235,8 @@ class TestEvaluadorRiesgo:
         assert self.evaluador._detectar_bimestre_alumno(fila) == 2
 
     def test_bimestre_corte_actua_como_techo_no_como_valor_forzado(self):
-        """TASK-APP-03: bimestre_corte debe recortar el futuro visible a la
-        autodetección sin fingir datos que el alumno todavía no tiene."""
+        """bimestre_corte debe recortar el futuro visible a la autodetección
+        sin fingir datos que el alumno todavía no tiene."""
         df_test = pd.DataFrame(
             [
                 {

@@ -48,7 +48,7 @@ class EntrenadorModelos:
             self.output_dir = output_dir
 
         os.makedirs(self.output_dir, exist_ok=True)
-        # La ruta base ya no es un único archivo, la gestionamos dinámicamente en el bucle
+        # La ruta base ya no es un único archivo: se gestiona dinámicamente en el bucle.
 
     @staticmethod
     def debe_entrenar(ruta_modelo_b1: str) -> bool:
@@ -97,7 +97,7 @@ class EntrenadorModelos:
         # 2. Bucle secuencial del bimestre 1 al máximo definido en config.yaml
         max_bimestre = config.machine_learning.get("max_bimestre", 6)
         for b in range(1, max_bimestre + 1):
-            # 3. Aplicar el filtro dinámico de la Fase 3
+            # 3. Enmascarar las columnas de bimestres posteriores al hito evaluado.
             df_bimestre = preparador.filtrar_columnas_por_bimestre(
                 df_entrenamiento_maestro, b
             )
@@ -106,17 +106,19 @@ class EntrenadorModelos:
             X = df_bimestre.drop(columns=["target_ml"])
             y = df_bimestre["target_ml"]
 
-            # 5. División en conjunto de entrenamiento y prueba (80% / 20%) manteniendo tu semilla
-            # Estratificamos por 'y' para asegurar que el test conserve la misma proporción
-            # de abandono/continúa que el conjunto completo (evita Recall inestable o en 0
-            # por azar en bimestres con pocas etiquetas de abandono).
+            # 5. División 80/20 con semilla fija (random_state=42) para que el
+            # resultado sea reproducible.
+            # Se estratifica por 'y' para que el conjunto de prueba conserve la
+            # misma proporción de abandono/continúa que el conjunto completo
+            # (evita Recall inestable o en 0 por azar en bimestres con pocas
+            # etiquetas de abandono).
             try:
                 X_train, X_test, y_train, y_test = train_test_split(
                     X, y, test_size=0.2, random_state=42, stratify=y
                 )
             except ValueError:
                 # Estratificar exige al menos 2 muestras por clase; si algún bimestre no las
-                # tiene, hacemos fallback a un split sin estratificar en lugar de fallar.
+                # tiene, se hace fallback a un split sin estratificar en lugar de fallar.
                 print(
                     f"Aviso: no se pudo estratificar el split del Bimestre {b} "
                     "(clase minoritaria insuficiente). Usando split simple."
@@ -152,7 +154,7 @@ class EntrenadorModelos:
             y_pred = modelo.predict(X_test)
             acc = float(accuracy_score(y_test, y_pred))
 
-            # Forzamos a que si no hay datos de abandono en test, devuelva 0.0 en lugar de fallar
+            # Si no hay datos de abandono en test, se devuelve 0.0 en lugar de fallar.
             try:
                 rec = float(
                     recall_score(

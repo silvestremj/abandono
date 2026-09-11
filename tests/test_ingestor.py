@@ -3,7 +3,7 @@ from src.ingestor_datos import IngestorDatos
 
 
 class TestIngestorDatos:
-    """Tests de ingesta, centrados en la detección de codificación (Espiral 3)."""
+    """Tests de ingesta, centrados en la detección de codificación."""
 
     def test_lee_csv_con_bom_utf8_pese_a_encoding_latin1_declarado(self, tmp_path):
         """Un CSV con BOM UTF-8 pero configurado con encoding='latin1' en

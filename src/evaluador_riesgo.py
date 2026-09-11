@@ -236,7 +236,8 @@ class EvaluadorRiesgo:
         Returns:
             Número de bimestre detectado (1-``self.max_bimestre``). Por defecto 1.
         """
-        # Buscamos de atrás hacia adelante (del último bimestre al 1) cuál es el primero con datos válidos
+        # Se busca de atrás hacia adelante (del último bimestre al 1) cuál es
+        # el primero con datos válidos.
         for b in range(self.max_bimestre, 0, -1):
             valor_nota = fila_alumno.get(f"nota_b{b}", np.nan)
             valor_asist = fila_alumno.get(f"asist_b{b}", np.nan)
@@ -253,13 +254,14 @@ class EvaluadorRiesgo:
         :meth:`src.preparador_datos.PreparadorDatos.ejecutar_preparacion`
         rellena con ``0.0`` las columnas de bimestres sin registro real, así
         que ``nota_bN == 0.0`` puede significar tanto "sacó un cero" (un
-        predictor de abandono genuino) como "todavía no hay dato" (~91% de
-        los alumnos activos en el caso de B1, por la baja cobertura del CSV
-        de notas de origen). Se verificó empíricamente que, de los alumnos
-        que sí tienen algún dato parcial del bimestre, siempre hay al menos
-        uno de los dos valores (nota o asistencia) mayor que 0 — el
-        doble-cero conjunto es la señal fiable de ausencia de registro, sin
-        falsos positivos detectados sobre los datos reales del proyecto.
+        predictor de abandono genuino) como "todavía no hay dato" (el fichero
+        de notas de origen no cubre todavía el bimestre en curso para cerca
+        del 90 % del alumnado activo, en el caso de B1). Se verificó
+        empíricamente que, de los alumnos que sí tienen algún dato parcial del
+        bimestre, siempre hay al menos uno de los dos valores (nota o
+        asistencia) mayor que 0 — el doble-cero conjunto es la señal fiable de
+        ausencia de registro, sin falsos positivos detectados sobre los datos
+        reales del proyecto.
 
         Args:
             fila_alumno: Fila del DataFrame con los datos del alumno.
@@ -461,7 +463,7 @@ class EvaluadorRiesgo:
         df_riesgo.loc[mask_etiquetados, "tipo_prediccion"] = "HISTÓRICO"
         df_riesgo.loc[mask_evaluables, "tipo_prediccion"] = "PRONÓSTICO"
 
-        # Inicializamos columnas de resultados
+        # Se inicializan las columnas de resultados.
         df_riesgo["probabilidad_abandono"] = np.nan
         df_riesgo["nivel_riesgo"] = "NO_CALCULABLE"
         df_riesgo["justificacion_riesgo"] = "N/A"
@@ -477,7 +479,7 @@ class EvaluadorRiesgo:
         if df_evaluar.empty:
             return df_riesgo
 
-        # Si hay un techo temporal fijado, recortamos las columnas de bimestres
+        # Si hay un techo temporal fijado, se recortan las columnas de bimestres
         # futuros SOLO para la autodetección del hito de cada alumno. La
         # inferencia en sí sigue usando la fila original sin recortar: una vez
         # detectado el bimestre b_alumno (que ya nunca podrá superar el techo),
@@ -513,8 +515,9 @@ class EvaluadorRiesgo:
             # para el bimestre detectado, no hay señal sobre la que inferir:
             # ejecutar el modelo sería predecir sobre ruido. Se marca un
             # estado distinto de ALTO/MEDIO/BAJO/NO_CALCULABLE en lugar de
-            # arriesgar un falso ALTO (ver hallazgo del ~91% de cobertura
-            # real de notas_bimestre.csv entre alumnado activo).
+            # arriesgar un falso ALTO (el fichero de notas de origen no cubre
+            # todavía el bimestre en curso para cerca del 90 % del alumnado
+            # activo).
             if self._sin_datos_reales_bimestre(fila_original, b_alumno):
                 df_riesgo.loc[idx, "nivel_riesgo"] = "SIN_DATOS_SUFICIENTES"
                 df_riesgo.loc[idx, "bimestre_evaluado"] = b_alumno
@@ -530,7 +533,7 @@ class EvaluadorRiesgo:
             modelo_b, columnas_b = self._obtener_modelo_bimestre(b_alumno)
 
             if modelo_b is None or columnas_b is None:
-                # Si el modelo de ese hito no existe, dejamos al alumno como no
+                # Si el modelo de ese hito no existe, el alumno queda como no
                 # calculable por seguridad, pero dejando constancia del motivo:
                 # un NO_CALCULABLE silencioso es indistinguible de un fallo del
                 # pipeline para quien audita los resultados después.

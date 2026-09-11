@@ -4,48 +4,48 @@ from src.preparador_datos import PreparadorDatos
 
 
 class TestPreparadorDatos:
-    """Batería de tests unitarios para la limpieza y segmentación de datos (Espiral 3)."""
+    """Batería de tests unitarios para la limpieza y segmentación de datos."""
 
     def setup_method(self):
         """Prepara el entorno antes de cada test."""
-        # Instanciamos el preparador con un diccionario vacío.
-        # No necesitamos cargar los Excel reales porque probamos funciones aisladas.
+        # Se instancia el preparador con un diccionario vacío.
+        # No hace falta cargar los Excel reales porque se prueban funciones aisladas.
         self.preparador = PreparadorDatos(datasets_dict={})
 
     def test_normalizar_espacios_y_mayusculas(self):
-        # Simulamos una columna con espacios a los lados y mezcla de mayúsculas/minúsculas
+        # Columna con espacios a los lados y mezcla de mayúsculas/minúsculas.
         df_prueba = pd.DataFrame(
             {"estudio": ["  cese  ", "CeIoT", " Especializacion "]}
         )
 
         resultado = self.preparador._normalizar(df_prueba, "estudio")
 
-        # Comprobamos que el resultado es exacto
+        # Se comprueba que el resultado es exacto.
         assert resultado.iloc[0] == "CESE"
         assert resultado.iloc[1] == "CEIOT"
         assert resultado.iloc[2] == "ESPECIALIZACION"
 
     def test_normalizar_tildes_y_caracteres_especiales(self):
-        # Simulamos textos con tildes y la letra eñe
+        # Textos con tildes y la letra eñe.
         df_prueba = pd.DataFrame(
             {"asignatura": ["Estadística", "Áéíóú", "Diseño", "Gestión"]}
         )
 
         resultado = self.preparador._normalizar(df_prueba, "asignatura")
 
-        # Comprobamos que las tildes desaparecen y la Ñ pasa a N (por la normalización ASCII)
+        # Se comprueba que las tildes desaparecen y la Ñ pasa a N (por la normalización ASCII).
         assert resultado.iloc[0] == "ESTADISTICA"
         assert resultado.iloc[1] == "AEIOU"
         assert resultado.iloc[2] == "DISENO"
         assert resultado.iloc[3] == "GESTION"
 
     def test_normalizar_numeros_como_texto(self):
-        # Simulamos que Pandas ha leído el ID del alumno como un número en lugar de texto
+        # Pandas ha leído el ID del alumno como un número en lugar de texto.
         df_prueba = pd.DataFrame({"n_siu": [12345, 67890]})
 
         resultado = self.preparador._normalizar(df_prueba, "n_siu")
 
-        # Comprobamos que lo ha forzado a convertirse en texto (string)
+        # Se comprueba que se ha forzado la conversión a texto (string).
         assert resultado.iloc[0] == "12345"
         assert resultado.iloc[1] == "67890"
 
@@ -74,7 +74,7 @@ class TestPreparadorDatos:
             ]
         )
 
-        # Simulamos que solicitamos el corte en el Bimestre 2 (El futuro es del B3 al B6)
+        # Se solicita el corte en el Bimestre 2 (el futuro es del B3 al B6).
         df_resultado = self.preparador.filtrar_columnas_por_bimestre(
             df_maestro_test, bimestre_corte=2
         )

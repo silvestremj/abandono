@@ -13,7 +13,7 @@ Este módulo se ejecuta como punto de entrada del proyecto::
 import os
 import sys
 
-# Aseguramos que Python encuentre los módulos dentro de 'src'
+# Permite importar los módulos de 'src' al ejecutar main.py desde la raíz del proyecto.
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
 from src.analizador_datos import Analizador
@@ -31,9 +31,9 @@ def main() -> None:
     db = GestorBaseDatos()
     db.inicializar_tablas_fijas()
 
-    # Activamos logs híbridos pasando el gestor de DB
+    # Logs híbridos: consola, fichero de texto y tabla logs_ejecucion en SQLite.
     log = GestorLogs(gestor_db=db)
-    log.registrar("MAIN", "Iniciando Pipeline de la Espiral 3 (Machine Learning)")
+    log.registrar("MAIN", "Iniciando el pipeline de predicción de abandono")
 
     try:
         # 1. Ingesta
@@ -62,7 +62,7 @@ def main() -> None:
         log.registrar("INF_4", "Dataset para ML preparado")
 
         # 5. Machine learning
-        # Verificamos si existe al menos el modelo del primer hito para decidir si entrenar
+        # Se entrena si falta el modelo del primer hito o si la configuración lo fuerza.
         ruta_modelo_b1 = os.path.join(
             os.path.dirname(__file__), "modelos", "arbol_b1.pkl"
         )
@@ -73,7 +73,6 @@ def main() -> None:
             )
             entrenador = EntrenadorModelos()
 
-            # Pasamos ambos parámetros: df_ml y el preparador
             df_comparativo = entrenador.entrenar_y_guardar(df_ml, preparador)
 
             log.registrar("INF_ML", "Modelos bimestrales entrenados y guardados.")

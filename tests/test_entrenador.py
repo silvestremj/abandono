@@ -10,7 +10,7 @@ class TestEntrenadorModelos:
     train/test estratificado y su fallback ante clases minoritarias muy pequeñas."""
 
     def setup_method(self):
-        # No necesitamos datos crudos: filtrar_columnas_por_bimestre no usa self.datasets.
+        # No hacen falta datos crudos: filtrar_columnas_por_bimestre no usa self.datasets.
         self.preparador = PreparadorDatos(datasets_dict={})
 
     def _dataset(self, n_positivos: int, n_negativos: int) -> pd.DataFrame:

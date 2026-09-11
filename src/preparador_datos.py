@@ -103,7 +103,7 @@ class PreparadorDatos:
 
     def _normalizar(self, df: pd.DataFrame, col: str) -> pd.Series:
         """
-        PREPROCESAMIENTO: Tarea 2: Normalización de Texto
+        Normalización de texto
         ---------------------------------------------------------------
         1. Convierte a string.
         2. Elimina espacios en blanco a los lados (strip).
@@ -134,13 +134,13 @@ class PreparadorDatos:
         # 1. Base y Target (del archivo Excel)
         df_base = self.datasets["actual"].copy()
 
-        # Normalizamos nombres de columnas por si acaso el Excel varía
+        # Se normalizan los nombres de columna por si el Excel varía.
         df_base.columns = [c.lower().strip() for c in df_base.columns]
 
         df_base["n_siu"] = self._normalizar(df_base, "n_siu")
         df_base["estudio"] = self._normalizar(df_base, "estudio")
 
-        # PREPROCESAMIENTO: Tarea 3: Deduplicación
+        # Deduplicación de registros de alumnado
         # --------------------------------------------------------------
         # Elimina alumnado duplicado en el mismo estudio. Prevalece el
         # registro más informativo (con estado_actual y/o nota reales) y,
@@ -180,7 +180,7 @@ class PreparadorDatos:
             )
         # --------------------------------------------------------------
 
-        # PREPROCESAMIENTO: Tarea 5: Tratamiento de anomalías
+        # Tratamiento de anomalías
         # --------------------------------------------------------------
         # Etiqueta alumnos sin estado para que aportan en el reporte final pero no distorsionen el cálculo.
         df_base["estado_actual"] = df_base["estado_actual"].fillna("SIN REGISTRO")
@@ -207,7 +207,7 @@ class PreparadorDatos:
         df_notas = self.datasets["notas_bimestre"].copy()
         df_notas.rename(columns={"Estudio": "estudio"}, inplace=True)
 
-        # Normalizamos también en la tabla de notas para asegurar el cruce correcto.
+        # Se normaliza también en la tabla de notas para asegurar el cruce correcto.
         df_notas["n_siu"] = self._normalizar(df_notas, "n_siu")
         df_notas["estudio"] = self._normalizar(df_notas, "estudio")
 
@@ -230,7 +230,7 @@ class PreparadorDatos:
         # 3. Join Final
         tabla_maestra = pd.merge(df_base, df_pivot, on=["n_siu", "estudio"], how="left")
 
-        # PREPROCESAMIENTO - Tarea 1: Tratamiento de Nulos
+        # Tratamiento de nulos
         # --------------------------------------------------------------
         # Identifica las columnas que corresponden a los bimestres (contienen "_b")
         # Ejemplo: "nota_b1", "asist_b2".
@@ -255,13 +255,13 @@ class PreparadorDatos:
             tabla_maestra["provincia"] = tabla_maestra["provincia"].replace(
                 ["", "NAN", "NONE", "NaN", "nan"], "DESCONOCIDA"
             )
-            # Convertimos a mayúsculas para que detecte "Otro", "OTRO", "otro", etc.
+            # Se convierte a mayúsculas para detectar "Otro", "OTRO", "otro", etc.
             tabla_maestra["provincia"] = tabla_maestra["provincia"].apply(
                 lambda x: "DESCONOCIDA" if "OTRO" in str(x).upper() else x
             )
 
         # ---------------------------------------------------------------
-        # PREPROCESAMIENTO - Tarea 4: Estandarización de Tipos (Type Casting)
+        # Estandarización de tipos
         # ---------------------------------------------------------------
 
         # Arreglar columnas numéricas que traen coma en lugar de punto
@@ -275,14 +275,14 @@ class PreparadorDatos:
                     tabla_maestra[col], errors="coerce"
                 ).fillna(0.0)
 
-        # Aseguramos que las columnas de bimestres sean numéricas (float).
+        # Se fuerza el tipo numérico de las columnas de bimestres (float).
         for col in cols_bimestres:
-            # errors='coerce' fuerza la conversión y, si hay algún texto raro (ej. "N/A"), lo pasa a NaN, que luego rellenamos con 0.0.
+            # errors='coerce' fuerza la conversión y, si hay algún texto raro (ej. "N/A"), lo pasa a NaN, que luego se rellena con 0.0.
             tabla_maestra[col] = pd.to_numeric(
                 tabla_maestra[col], errors="coerce"
             ).fillna(0.0)
 
-        # Aseguramos que la columna target sea numérica (float).
+        # Se fuerza el tipo numérico de la columna target (float).
         if "target" in tabla_maestra.columns:
             tabla_maestra["target"] = tabla_maestra["target"].astype(float)
         # ---------------------------------------------------------------
@@ -301,13 +301,13 @@ class PreparadorDatos:
         }
 
         if "tipo_ocupacion" in tabla_maestra.columns:
-            # Convertimos a entero primero por si acaso viene como float/string
+            # Se convierte a entero primero por si viene como float/string.
             tabla_maestra["tipo_ocupacion"] = (
                 pd.to_numeric(tabla_maestra["tipo_ocupacion"], errors="coerce")
                 .fillna(-1)
                 .astype(int)
             )
-            # Aplicamos el cambio de nombre
+            # Se aplica el cambio de nombre.
             tabla_maestra["tipo_ocupacion"] = (
                 tabla_maestra["tipo_ocupacion"]
                 .map(mapping_ocupacion)
@@ -351,7 +351,7 @@ class PreparadorDatos:
         df_ml = excluir_columnas_ml(df_ml, COLUMNAS_EXCLUIDAS_ML)
 
         # 3. Identificación de variables categóricas para One-Hot Encoding
-        # Seleccionamos las columnas de tipo 'object' (strings) que quedan
+        # Se seleccionan las columnas de tipo 'object' (strings) que quedan.
         cols_categoricas = df_ml.select_dtypes(include=["object"]).columns.tolist()
 
         # 4. Aplicación de One-Hot Encoding
