@@ -217,8 +217,6 @@ Antes de entrenar los modelos, el sistema elimina automáticamente las variables
 4. Se abrirá la interfaz web en el navegador. Desde allí se pueden subir versiones nuevas de los tres ficheros declarados (ver [Subida de ficheros desde la interfaz web](#subida-de-ficheros-desde-la-interfaz-web)), ejecutar los cálculos y visualizar los resultados. Si no se sube nada, se usa lo que ya hay en `data/`.
 5. Los resultados también se exportan a la carpeta `output/` en formato CSV.
 
-> **Nota**: El modo de ejecución puede cambiar en futuras versiones para que la persona usuaria no necesite usar la terminal.
-
 ## Estructura del Proyecto
 
 ```
