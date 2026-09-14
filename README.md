@@ -22,7 +22,7 @@ Los archivos CSV almacenan datos históricos y transaccionales de naturaleza mul
 
 | Fichero | Propósito | Separador | Encoding |
 |---|---|---|---|
-| `LSE_Inscrip_Baja_Recibido.csv` | Inscripciones históricas con estados académicos (incluye dados de baja y recibidos) | `;` | `latin1` |
+| `LSE_Inscrip_Baja_Recibido.csv` | Desenlaces cerrados (Recibido / Abandono) con los datos de inscripción de cada caso. Se ingesta y se persiste como `raw_inscripciones`, pero no interviene en la Tabla Maestra | `;` | `latin1` |
 | `LSE_Notas_Estadistica_Bimestre.csv` | Calificaciones y asistencia desagregadas por bimestre | `;` | `latin1` |
 
 #### Estructura de columnas — `LSE_Inscrip_Baja_Recibido.csv`
@@ -44,7 +44,7 @@ Los archivos CSV almacenan datos históricos y transaccionales de naturaleza mul
 | `ocupacion` | Texto | Descripción de la ocupación actual | No |
 | `tipo_ocupacion` | Numérico | Código de la ocupación (0-8) | No |
 | `año_estado` | Numérico | Año en que se registró el estado | No |
-| `estado_actual` | Texto | Estado académico del estudiante | No (se usa para generar el target) |
+| `estado_actual` | Texto | Estado académico del estudiante | No (no se usa: la etiqueta se deriva del `estado_actual` del Excel) |
 
 #### Estructura de columnas — `LSE_Notas_Estadistica_Bimestre.csv`
 
@@ -60,7 +60,7 @@ Los archivos CSV almacenan datos históricos y transaccionales de naturaleza mul
 
 ### Fichero Excel — Estado consolidado actual
 
-El archivo Excel proporciona el estado académico **consolidado y actual** del estudiante. Se utiliza este formato porque representa una instantánea oficial del estado de cada alumno, con datos más limpios y estructurados que los archivos CSV históricos.
+El archivo Excel proporciona el estado académico **consolidado y actual** del estudiante, incluyendo inscripción, notas y baja en un único registro por alumno.
 
 | Fichero | Propósito | Formato |
 |---|---|---|
@@ -155,7 +155,7 @@ Los datos abandonan su formato físico (CSV/Excel) y se cargan en memoria como u
 
 ### Transformaciones clave en la preparación
 
-- **Deduplicación**: Se eliminan registros duplicados por (`n_siu`, `estudio`), prevaleciendo el último registro.
+- **Deduplicación**: Se eliminan registros duplicados por (`n_siu`, `estudio`), prevaleciendo el registro más informativo (con `estado_actual` y/o nota reales) y, entre varios igual de informativos, el último.
 - **Tratamiento de nulos**: Los valores faltantes en columnas de bimestres se rellenan con `0.0`.
 - **Mapeo geográfico**: Los países se agrupan en "ARGENTINA" / "OTRO PAIS". Las provincias con valor "OTRO" o nulas se etiquetan como "DESCONOCIDA".
 - **Mapeo de ocupación**: Los códigos numéricos de `tipo_ocupacion` (0-8) se transforman a nombres descriptivos (ej: `2` → "Desarrollador/Programador").
@@ -174,6 +174,7 @@ Antes de entrenar los modelos, el sistema elimina automáticamente las variables
 | `estado_baja` | Revela el estado final de la baja (fuga de datos) |
 | `causa_baja` | Contiene la causa de la baja (fuga de datos) |
 | `target` | Es el target interno de reglas de negocio (no debe usarse para ML) |
+| `tf_nota`, `tf_asist`, `tf_recibido` | Evaluación del trabajo final (TF): solo existen para el alumnado que se ha recibido, por lo que revelan el desenlace (fuga de datos) |
 
 ### Variables eliminadas por no ser predictivas
 
@@ -188,7 +189,6 @@ Antes de entrenar los modelos, el sistema elimina automáticamente las variables
 | `cohorte` | Año de cohorte (no es predictiva directamente) |
 | `year` | Año del registro (no es predictiva) |
 | `cant` | Campo no accionable |
-| `tf_nota`, `tf_asist`, `tf_recibido` | Variables de transformación (no predictivas) |
 
 ### Variables eliminadas por alta cardinalidad
 
